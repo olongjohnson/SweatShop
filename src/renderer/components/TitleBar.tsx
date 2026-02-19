@@ -3,7 +3,7 @@ import AgentTabBar from './AgentTabBar';
 import logoUrl from '../icon.png';
 import type { AgentStatus } from '../../shared/types';
 
-type AppView = 'dashboard' | 'stories';
+type AppView = 'dashboard' | 'stories' | 'analytics';
 
 interface AgentTab {
   id: string;
@@ -71,6 +71,13 @@ export default function TitleBar({ agents, activeAgentId, onSelectAgent, onAddAg
           onClick={() => onNavigate(activeView === 'stories' ? 'dashboard' : 'stories')}
         >
           Stories
+        </button>
+        <button
+          title="Analytics"
+          className={activeView === 'analytics' ? 'active' : ''}
+          onClick={() => onNavigate(activeView === 'analytics' ? 'dashboard' : 'analytics')}
+        >
+          Analytics
         </button>
         <button title="Settings">Settings</button>
       </div>

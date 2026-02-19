@@ -5,6 +5,7 @@ import { getToolDefinitions, executeTool } from './agent-tools';
 import type { ToolConfig, ToolCallbacks } from './agent-tools';
 import { buildAgentSystemPrompt } from '../prompts/agent-system';
 import * as dbService from './database';
+import { analytics } from './analytics';
 import { v4 as uuid } from 'uuid';
 
 interface ConversationMessage {
@@ -57,11 +58,15 @@ export class AgentInstance extends EventEmitter {
     this.assignedOrg = config.orgAlias;
     this.assignedBranch = config.branchName;
 
-    // Create a ticket run
+    // Create a ticket run in DB
     this.runId = uuid();
-    // We can't call a createRun method since we don't have one in the DB service,
-    // but we have the ticket_runs table. Let's use the DB directly via the service.
-    // For now, just track it in memory — we'll record on completion.
+    dbService.createRun({
+      id: this.runId,
+      ticketId: config.ticketId,
+      agentId: this.id,
+      orgAlias: config.orgAlias,
+      branchName: config.branchName,
+    });
 
     this.setStatus('DEVELOPING');
     this.emitChat('system', `Starting work on ticket. Branch: ${config.branchName}, Org: ${config.orgAlias}`);
@@ -87,6 +92,9 @@ export class AgentInstance extends EventEmitter {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       this.setStatus('ERROR');
       this.emitChat('system', `Agent error: ${msg}`);
+      if (this.runId) {
+        dbService.updateRun(this.runId, { status: 'failed', completedAt: new Date().toISOString() });
+      }
       this.emit('error', err);
     }
   }
@@ -121,8 +129,10 @@ export class AgentInstance extends EventEmitter {
 
   stop(): void {
     this.stopped = true;
+    if (this.runId) {
+      dbService.updateRun(this.runId, { status: 'cancelled', completedAt: new Date().toISOString() });
+    }
     this.setStatus('IDLE');
-    // If waiting for human input, unblock with a cancellation
     if (this.humanResponseResolve) {
       this.humanResponseResolve('[Agent stopped by user]');
       this.humanResponseResolve = null;
@@ -145,7 +155,6 @@ export class AgentInstance extends EventEmitter {
         this.emit('needs-input', question);
         this.interventionStartTime = Date.now();
 
-        // Pause until human responds
         return new Promise<string>((resolve) => {
           this.humanResponseResolve = resolve;
         });
@@ -153,6 +162,9 @@ export class AgentInstance extends EventEmitter {
       onWorkComplete: () => {
         this.setStatus('QA_READY');
         this.emitChat('system', 'Development complete. Ready for QA review.');
+        if (this.runId) {
+          dbService.updateRun(this.runId, { status: 'completed', completedAt: new Date().toISOString() });
+        }
         this.emit('work-complete');
       },
     };
@@ -166,7 +178,15 @@ export class AgentInstance extends EventEmitter {
         messages: this.conversationHistory as Anthropic.MessageParam[],
       });
 
-      // Build the assistant message content
+      // Record token usage
+      if (this.runId) {
+        analytics.recordTokenUsage(
+          this.runId,
+          response.usage.input_tokens,
+          response.usage.output_tokens
+        );
+      }
+
       const assistantContent: Anthropic.ContentBlockParam[] = [];
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
@@ -182,7 +202,6 @@ export class AgentInstance extends EventEmitter {
             input: block.input as Record<string, string>,
           });
 
-          // Execute the tool
           const result = await executeTool(
             block.name,
             block.input as Record<string, string>,
@@ -190,7 +209,6 @@ export class AgentInstance extends EventEmitter {
             toolCallbacks
           );
 
-          // If work is complete or agent stopped, break
           if (block.name === 'report_development_complete' || this.stopped) {
             toolResults.push({
               type: 'tool_result',
@@ -200,7 +218,6 @@ export class AgentInstance extends EventEmitter {
             break;
           }
 
-          // After human input, agent resumes as DEVELOPING
           if (block.name === 'request_human_input') {
             this.setStatus('DEVELOPING');
           }
@@ -215,13 +232,11 @@ export class AgentInstance extends EventEmitter {
         }
       }
 
-      // Add assistant message to history
       this.conversationHistory.push({
         role: 'assistant',
         content: assistantContent,
       });
 
-      // If there were tool calls, add tool results and continue
       if (toolResults.length > 0) {
         this.conversationHistory.push({
           role: 'user',
@@ -229,15 +244,11 @@ export class AgentInstance extends EventEmitter {
         });
       }
 
-      // If work complete or stopped, exit loop
       if (this._status === 'QA_READY' || this.stopped) {
         break;
       }
 
-      // If stop_reason is 'end_turn' with no tool use, the agent is done thinking
       if (response.stop_reason === 'end_turn' && toolResults.length === 0) {
-        // Agent finished without calling report_development_complete
-        // This might mean it needs more input or got confused
         break;
       }
     }
