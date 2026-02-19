@@ -11,6 +11,10 @@ export const IPC_CHANNELS = {
   AGENT_GET: 'agent:get',
   AGENT_CREATE: 'agent:create',
   AGENT_UPDATE: 'agent:update',
+  AGENT_ASSIGN: 'agent:assign',
+  AGENT_APPROVE: 'agent:approve',
+  AGENT_REJECT: 'agent:reject',
+  AGENT_STOP: 'agent:stop',
 
   // Scratch Orgs
   ORG_LIST: 'org:list',

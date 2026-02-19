@@ -4,6 +4,7 @@ import * as dbService from './services/database';
 import { generateStoryDetails } from './services/story-generator';
 import * as deathmark from './services/deathmark';
 import { getSettings, updateSettings } from './services/settings';
+import { agentManager } from './services/agent-manager';
 
 export function registerIpcHandlers(): void {
   // Tickets
@@ -36,12 +37,28 @@ export function registerIpcHandlers(): void {
     return dbService.getAgent(id);
   });
 
-  ipcMain.handle(IPC_CHANNELS.AGENT_CREATE, (_, data) => {
-    return dbService.createAgent(data);
+  ipcMain.handle(IPC_CHANNELS.AGENT_CREATE, async (_, data) => {
+    return agentManager.createAgent(data.name || data);
   });
 
   ipcMain.handle(IPC_CHANNELS.AGENT_UPDATE, (_, id: string, data) => {
     return dbService.updateAgent(id, data);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_ASSIGN, async (_, agentId: string, ticketId: string, config) => {
+    return agentManager.assignTicket(agentId, ticketId, config);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_APPROVE, async (_, agentId: string) => {
+    return agentManager.approveWork(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_REJECT, async (_, agentId: string, feedback: string) => {
+    return agentManager.rejectWork(agentId, feedback);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AGENT_STOP, async (_, agentId: string) => {
+    return agentManager.stopAgent(agentId);
   });
 
   // Scratch Orgs
@@ -62,8 +79,9 @@ export function registerIpcHandlers(): void {
     return dbService.chatHistory(agentId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.CHAT_SEND, (_, agentId: string, content: string) => {
-    return dbService.chatSend(agentId, content);
+  ipcMain.handle(IPC_CHANNELS.CHAT_SEND, async (_, agentId: string, content: string) => {
+    await agentManager.sendMessage(agentId, content);
+    return dbService.chatHistory(agentId).slice(-1)[0];
   });
 
   // Runs
