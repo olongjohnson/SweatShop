@@ -2,16 +2,29 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Launch SweatShop",
+      "label": "SweatShop: Build & Launch",
       "type": "npm",
       "script": "start",
-      "path": "",
       "problemMatcher": [],
       "presentation": {
         "reveal": "silent",
         "panel": "dedicated"
       },
-      "group": "none"
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "SweatShop: Dev Mode",
+      "type": "npm",
+      "script": "dev",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "group": "build"
     }
   ]
 }
