@@ -6,6 +6,7 @@ import * as deathmark from './services/deathmark';
 import { getSettings, updateSettings } from './services/settings';
 import { agentManager } from './services/agent-manager';
 import { orchestrator } from './services/orchestrator';
+import { browserManager } from './services/browser-manager';
 
 export function registerIpcHandlers(): void {
   // Tickets
@@ -150,6 +151,40 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.ORCHESTRATOR_STATUS, () => {
     return orchestrator.getStatus();
+  });
+
+  // Browser
+  ipcMain.handle(IPC_CHANNELS.BROWSER_LOAD_URL, (_, agentId: string, url: string) => {
+    browserManager.create(agentId);
+    browserManager.loadURL(agentId, url);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_SET_BOUNDS, (_, agentId: string, bounds) => {
+    browserManager.setBounds(agentId, bounds);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_BACK, (_, agentId: string) => {
+    browserManager.goBack(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_FORWARD, (_, agentId: string) => {
+    browserManager.goForward(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_RELOAD, (_, agentId: string) => {
+    browserManager.reload(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_GET_URL, (_, agentId: string) => {
+    return browserManager.getURL(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_SHOW, (_, agentId: string, bounds) => {
+    browserManager.show(agentId, bounds);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_HIDE_ALL, () => {
+    browserManager.hideAll();
   });
 
   // Settings

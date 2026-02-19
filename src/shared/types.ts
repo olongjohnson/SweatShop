@@ -175,6 +175,16 @@ export interface SweatShopAPI {
     getStatus: () => Promise<OrchestratorStatus>;
     onProgress: (callback: (status: OrchestratorStatus) => void) => void;
   };
+  browser: {
+    loadURL: (agentId: string, url: string) => Promise<void>;
+    setBounds: (agentId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
+    back: (agentId: string) => Promise<void>;
+    forward: (agentId: string) => Promise<void>;
+    reload: (agentId: string) => Promise<void>;
+    getURL: (agentId: string) => Promise<string>;
+    show: (agentId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
+    hideAll: () => Promise<void>;
+  };
   deathmark: {
     testConnection: () => Promise<{ success: boolean; error?: string }>;
     sync: () => Promise<Ticket[]>;

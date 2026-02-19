@@ -71,6 +71,17 @@ const api: SweatShopAPI = {
     },
   },
 
+  browser: {
+    loadURL: (agentId, url) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_LOAD_URL, agentId, url),
+    setBounds: (agentId, bounds) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_SET_BOUNDS, agentId, bounds),
+    back: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_BACK, agentId),
+    forward: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_FORWARD, agentId),
+    reload: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_RELOAD, agentId),
+    getURL: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_GET_URL, agentId),
+    show: (agentId, bounds) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_SHOW, agentId, bounds),
+    hideAll: () => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_HIDE_ALL),
+  },
+
   deathmark: {
     testConnection: () => ipcRenderer.invoke(IPC_CHANNELS.DEATHMARK_TEST_CONNECTION),
     sync: () => ipcRenderer.invoke(IPC_CHANNELS.DEATHMARK_SYNC),
