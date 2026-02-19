@@ -21,7 +21,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **04 — Story Management** (`04_story_management.md`)
   Manual story/ticket CRUD in SweatShop + Deathmark (Salesforce PM tool) integration for importing stories. This is the input pipeline.
 
-- [ ] **05 — Agent Runtime** (`05_agent_runtime.md`)
+- [x] **05 — Agent Runtime** (`05_agent_runtime.md`)
   Claude API integration, agent process spawning, tool definitions, sandboxed execution. The core engine.
 
 - [ ] **06 — Chat Pane** (`06_chat_pane.md`)
