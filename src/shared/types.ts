@@ -122,8 +122,19 @@ export interface SweatShopAPI {
   agents: {
     list: () => Promise<Agent[]>;
     get: (id: string) => Promise<Agent | null>;
-    create: (data: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Agent>;
+    create: (data: { name: string }) => Promise<Agent>;
     update: (id: string, data: Partial<Agent>) => Promise<Agent>;
+    assign: (agentId: string, ticketId: string, config: {
+      orgAlias: string;
+      branchName: string;
+      refinedPrompt: string;
+      workingDirectory: string;
+    }) => Promise<void>;
+    approve: (agentId: string) => Promise<void>;
+    reject: (agentId: string, feedback: string) => Promise<void>;
+    stop: (agentId: string) => Promise<void>;
+    onStatusChanged: (callback: (data: { agentId: string; status: AgentStatus }) => void) => void;
+    onTerminalData: (callback: (data: { agentId: string; data: string }) => void) => void;
   };
   orgs: {
     list: () => Promise<ScratchOrg[]>;

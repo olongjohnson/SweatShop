@@ -23,6 +23,18 @@ const api: SweatShopAPI = {
     get: (id) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_GET, id),
     create: (data) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CREATE, data),
     update: (id, data) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_UPDATE, id, data),
+    assign: (agentId, ticketId, config) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_ASSIGN, agentId, ticketId, config),
+    approve: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_APPROVE, agentId),
+    reject: (agentId, feedback) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AGENT_REJECT, agentId, feedback),
+    stop: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STOP, agentId),
+    onStatusChanged: (callback) => {
+      ipcRenderer.on(IPC_CHANNELS.AGENT_STATUS_CHANGED, (_, data) => callback(data));
+    },
+    onTerminalData: (callback) => {
+      ipcRenderer.on(IPC_CHANNELS.AGENT_TERMINAL_DATA, (_, data) => callback(data));
+    },
   },
 
   orgs: {
