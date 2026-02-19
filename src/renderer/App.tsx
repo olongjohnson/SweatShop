@@ -1,22 +1,42 @@
-import React from 'react';
-import logoUrl from './icon.png';
+import React, { useState, useCallback, useRef } from 'react';
+import TitleBar from './components/TitleBar';
+import Sidebar from './components/Sidebar';
+import ResizableDivider from './components/ResizableDivider';
+import MainContent from './components/MainContent';
 
-function App() {
-  const api = window.sweatshop;
+const MOCK_AGENTS = [
+  { id: 'agent-1', name: 'Agent 1', status: 'developing' as const },
+  { id: 'agent-2', name: 'Agent 2', status: 'needs-input' as const },
+  { id: 'agent-3', name: 'Agent 3', status: 'idle' as const },
+];
+
+export default function App() {
+  const [activeAgentId, setActiveAgentId] = useState('agent-1');
+  const [sidebarWidth, setSidebarWidth] = useState(350);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  const handleSidebarResize = useCallback((delta: number) => {
+    setSidebarWidth((prev) => {
+      if (!bodyRef.current) return prev;
+      const maxWidth = bodyRef.current.getBoundingClientRect().width * 0.5;
+      return Math.max(250, Math.min(maxWidth, prev + delta));
+    });
+  }, []);
 
   return (
     <div className="app">
-      <div className="container">
-        <img src={logoUrl} alt="SweatShop" className="logo" />
-        <h1>SweatShop</h1>
-        <p>AI Agent Orchestrator for Salesforce Development</p>
-        <div className="versions">
-          Chrome {api?.versions.chrome} | Node {api?.versions.node} | Electron{' '}
-          {api?.versions.electron}
+      <TitleBar
+        agents={MOCK_AGENTS}
+        activeAgentId={activeAgentId}
+        onSelectAgent={setActiveAgentId}
+      />
+      <div className="app-body" ref={bodyRef}>
+        <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex' }}>
+          <Sidebar />
         </div>
+        <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
+        <MainContent />
       </div>
     </div>
   );
 }
-
-export default App;
