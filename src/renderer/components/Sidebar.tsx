@@ -3,7 +3,11 @@ import ChatPane from './ChatPane';
 import ResizableDivider from './ResizableDivider';
 import TerminalPane from './TerminalPane';
 
-export default function Sidebar() {
+interface SidebarProps {
+  agentId: string | null;
+}
+
+export default function Sidebar({ agentId }: SidebarProps) {
   // Chat takes 55% of sidebar height by default
   const [chatRatio, setChatRatio] = useState(0.55);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -19,7 +23,7 @@ export default function Sidebar() {
   return (
     <div className="sidebar" ref={sidebarRef}>
       <div style={{ flex: chatRatio, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <ChatPane showQaActions />
+        <ChatPane agentId={agentId} />
       </div>
       <ResizableDivider direction="horizontal" onResize={handleVerticalResize} />
       <div style={{ flex: 1 - chatRatio, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
