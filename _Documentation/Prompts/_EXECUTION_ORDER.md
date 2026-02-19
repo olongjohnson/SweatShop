@@ -15,7 +15,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **02 — App Shell & Layout** (`02_app_shell.md`)
   Build the main window layout: top nav/tab bar, resizable left sidebar (chat + terminal), main content area (browser pane). Dark theme. No functionality yet — just the skeleton.
 
-- [ ] **03 — Data Layer** (`03_data_layer.md`)
+- [x] **03 — Data Layer** (`03_data_layer.md`)
   SQLite database, shared TypeScript types, Electron IPC bridge between main and renderer. This is the backbone everything talks through.
 
 - [ ] **04 — Story Management** (`04_story_management.md`)
