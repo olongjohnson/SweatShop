@@ -36,7 +36,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **09 — Browser Pane** (`09_browser_pane.md`)
   Embedded Electron webview/WebContentsView for loading Salesforce scratch orgs. Navigation controls, auto-login via frontdoor URL.
 
-- [ ] **10 — Git Integration** (`10_git_integration.md`)
+- [x] **10 — Git Integration** (`10_git_integration.md`)
   Per-agent feature branch management. Create, commit, merge, conflict detection.
 
 - [ ] **11 — Org Controller & Provisioning** (`11_org_controller.md`)
