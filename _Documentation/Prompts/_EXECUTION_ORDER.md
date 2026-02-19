@@ -33,7 +33,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **08 — Orchestrator** (`08_orchestrator.md`)
   Prompt refinement engine, dependency analysis, agent dispatch, work queue management.
 
-- [ ] **09 — Browser Pane** (`09_browser_pane.md`)
+- [x] **09 — Browser Pane** (`09_browser_pane.md`)
   Embedded Electron webview/WebContentsView for loading Salesforce scratch orgs. Navigation controls, auto-login via frontdoor URL.
 
 - [ ] **10 — Git Integration** (`10_git_integration.md`)
