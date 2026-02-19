@@ -31,7 +31,7 @@ SweatShop automates the management layer:
 ## Core Concepts
 
 ### Ticket → Prompt Pipeline
-SweatShop integrates with Cognito (our Salesforce-native project management tool) to pull tickets. It refines ticket descriptions, acceptance criteria, and context into structured prompts that agents can execute against.
+SweatShop integrates with Deathmark (our Salesforce-native project management tool) to pull tickets. Users can also create stories directly in SweatShop for quick, ad-hoc work. It refines ticket descriptions, acceptance criteria, and context into structured prompts that agents can execute against.
 
 ### The Orchestrator
 The central brain that decides how to decompose work. Given a set of tickets, it determines:
@@ -62,7 +62,7 @@ Strict mapping of which agents can write to which scratch orgs. In development, 
 
 | System | Role |
 |---|---|
-| **Cognito** (Salesforce) | Source of tickets and project scope |
+| **Deathmark** (Salesforce) | Source of tickets and project scope |
 | **Salesforce CLI (`sf`)** | Org creation, metadata deployment, data loading |
 | **Git** | Branch management, merge operations |
 | **AI Provider** (Claude / etc.) | Agent intelligence |
@@ -70,7 +70,7 @@ Strict mapping of which agents can write to which scratch orgs. In development, 
 
 ## Success Criteria
 
-1. A human can define work in Cognito, press go, and have multiple agents execute in parallel.
+1. A human can define work in Deathmark (or directly in SweatShop), press go, and have multiple agents execute in parallel.
 2. Each completed ticket results in a QA-ready scratch org the human can immediately evaluate.
 3. Approved work merges cleanly back to the target branch.
 4. The human never loses visibility — every agent's state is observable at a glance.

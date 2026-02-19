@@ -1,0 +1,25 @@
+{
+  "name": "sweatshop",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "node scripts/launch.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/olongjohnson/SweatShop.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/olongjohnson/SweatShop/issues"
+  },
+  "homepage": "https://github.com/olongjohnson/SweatShop#readme",
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "sharp": "^0.34.5"
+  }
+}

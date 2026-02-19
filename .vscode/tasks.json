@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Launch SweatShop",
+      "type": "npm",
+      "script": "start",
+      "path": "",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated"
+      },
+      "group": "none"
+    }
+  ]
+}
