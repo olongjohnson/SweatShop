@@ -49,6 +49,16 @@ export const IPC_CHANNELS = {
   ORCHESTRATOR_STATUS: 'orchestrator:status',
   ORCHESTRATOR_PROGRESS: 'orchestrator:progress',
 
+  // Browser
+  BROWSER_LOAD_URL: 'browser:load-url',
+  BROWSER_SET_BOUNDS: 'browser:set-bounds',
+  BROWSER_BACK: 'browser:back',
+  BROWSER_FORWARD: 'browser:forward',
+  BROWSER_RELOAD: 'browser:reload',
+  BROWSER_GET_URL: 'browser:get-url',
+  BROWSER_SHOW: 'browser:show',
+  BROWSER_HIDE_ALL: 'browser:hide-all',
+
   // Agent state changes (main → renderer push)
   AGENT_STATUS_CHANGED: 'agent:status-changed',
   AGENT_TERMINAL_DATA: 'agent:terminal-data',

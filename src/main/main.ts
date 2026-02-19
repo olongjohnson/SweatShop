@@ -4,6 +4,7 @@ import * as os from 'os';
 import { initDatabase, closeDatabase } from './services/database';
 import { initSettings } from './services/settings';
 import { registerIpcHandlers } from './ipc-handlers';
+import { browserManager } from './services/browser-manager';
 
 // Avoid GPU cache permission errors (VS Code terminal inherits restrictive paths)
 app.setPath('userData', path.join(os.homedir(), '.sweatshop'));
@@ -11,7 +12,7 @@ app.setPath('userData', path.join(os.homedir(), '.sweatshop'));
 // SWEATSHOP_DEV=1 is set by the `dev` script. `start` and `build` use the built files.
 const isDev = process.env.SWEATSHOP_DEV === '1';
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -27,6 +28,8 @@ function createWindow(): void {
   } else {
     win.loadFile(path.join(__dirname, '../../renderer/index.html'));
   }
+
+  return win;
 }
 
 app.whenReady().then(() => {
@@ -38,11 +41,13 @@ app.whenReady().then(() => {
   // Register IPC handlers before creating windows
   registerIpcHandlers();
 
-  createWindow();
+  const win = createWindow();
+  browserManager.setMainWindow(win);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      const newWin = createWindow();
+      browserManager.setMainWindow(newWin);
     }
   });
 });

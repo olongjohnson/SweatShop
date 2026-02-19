@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import ResizableDivider from './components/ResizableDivider';
-import MainContent from './components/MainContent';
+import BrowserPane from './components/BrowserPane';
 import StoriesView from './views/StoriesView';
 
 type AppView = 'dashboard' | 'stories';
@@ -42,7 +42,7 @@ export default function App() {
             <Sidebar agentId={activeAgentId} />
           </div>
           <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
-          <MainContent />
+          <BrowserPane agentId={activeAgentId} />
         </div>
       ) : (
         <div className="app-body">
