@@ -18,7 +18,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **03 — Data Layer** (`03_data_layer.md`)
   SQLite database, shared TypeScript types, Electron IPC bridge between main and renderer. This is the backbone everything talks through.
 
-- [ ] **04 — Story Management** (`04_story_management.md`)
+- [x] **04 — Story Management** (`04_story_management.md`)
   Manual story/ticket CRUD in SweatShop + Deathmark (Salesforce PM tool) integration for importing stories. This is the input pipeline.
 
 - [ ] **05 — Agent Runtime** (`05_agent_runtime.md`)
