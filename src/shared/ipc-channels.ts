@@ -49,6 +49,11 @@ export const IPC_CHANNELS = {
   ORCHESTRATOR_STATUS: 'orchestrator:status',
   ORCHESTRATOR_PROGRESS: 'orchestrator:progress',
 
+  // Git
+  GIT_VALIDATE: 'git:validate',
+  GIT_MODIFIED_FILES: 'git:modified-files',
+  GIT_DIFF_SUMMARY: 'git:diff-summary',
+
   // Browser
   BROWSER_LOAD_URL: 'browser:load-url',
   BROWSER_SET_BOUNDS: 'browser:set-bounds',

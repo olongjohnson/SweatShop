@@ -71,6 +71,12 @@ const api: SweatShopAPI = {
     },
   },
 
+  git: {
+    validate: (dir) => ipcRenderer.invoke(IPC_CHANNELS.GIT_VALIDATE, dir),
+    getModifiedFiles: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.GIT_MODIFIED_FILES, agentId),
+    getDiffSummary: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DIFF_SUMMARY, agentId),
+  },
+
   browser: {
     loadURL: (agentId, url) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_LOAD_URL, agentId, url),
     setBounds: (agentId, bounds) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_SET_BOUNDS, agentId, bounds),

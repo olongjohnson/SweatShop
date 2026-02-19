@@ -26,6 +26,7 @@ export interface SweatShopSettings {
   git?: {
     baseBranch: string;
     mergeStrategy: 'squash' | 'merge';
+    workingDirectory: string;
   };
   orgPool?: {
     maxOrgs: number;
@@ -38,6 +39,7 @@ const DEFAULTS: SweatShopSettings = {
   git: {
     baseBranch: 'main',
     mergeStrategy: 'squash',
+    workingDirectory: '',
   },
   orgPool: {
     maxOrgs: 4,
