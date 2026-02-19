@@ -24,7 +24,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **05 — Agent Runtime** (`05_agent_runtime.md`)
   Claude API integration, agent process spawning, tool definitions, sandboxed execution. The core engine.
 
-- [ ] **06 — Chat Pane** (`06_chat_pane.md`)
+- [x] **06 — Chat Pane** (`06_chat_pane.md`)
   Per-agent chat UI with message history, user input, quick actions (approve/reject). Wired to agent runtime via IPC.
 
 - [ ] **07 — Terminal Pane** (`07_terminal_pane.md`)
