@@ -113,6 +113,16 @@ export interface OrchestratorStatus {
   completed: number;
 }
 
+// ===== Notifications =====
+
+export interface AgentNotification {
+  agentId: string;
+  agentName: string;
+  status: AgentStatus;
+  event?: 'merged';
+  ticketTitle?: string;
+}
+
 // ===== Preload API =====
 
 export interface SweatShopAPI {
@@ -145,6 +155,7 @@ export interface SweatShopAPI {
     stop: (agentId: string) => Promise<void>;
     onStatusChanged: (callback: (data: { agentId: string; status: AgentStatus }) => void) => void;
     onTerminalData: (callback: (data: { agentId: string; data: string }) => void) => void;
+    onNotification: (callback: (data: AgentNotification) => void) => void;
   };
   orgs: {
     list: () => Promise<ScratchOrg[]>;

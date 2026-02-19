@@ -71,4 +71,5 @@ export const IPC_CHANNELS = {
   // Agent state changes (main → renderer push)
   AGENT_STATUS_CHANGED: 'agent:status-changed',
   AGENT_TERMINAL_DATA: 'agent:terminal-data',
+  AGENT_NOTIFICATION: 'agent:notification',
 } as const;

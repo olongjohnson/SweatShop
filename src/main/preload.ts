@@ -35,6 +35,9 @@ const api: SweatShopAPI = {
     onTerminalData: (callback) => {
       ipcRenderer.on(IPC_CHANNELS.AGENT_TERMINAL_DATA, (_, data) => callback(data));
     },
+    onNotification: (callback) => {
+      ipcRenderer.on(IPC_CHANNELS.AGENT_NOTIFICATION, (_, data) => callback(data));
+    },
   },
 
   orgs: {

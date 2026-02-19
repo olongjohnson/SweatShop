@@ -4,6 +4,7 @@ import { GitService } from './git-service';
 import * as dbService from './database';
 import { getSettings } from './settings';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
+import { assertTransition, isInterruptState } from './agent-state-machine';
 import type { Agent, AgentStatus } from '../../shared/types';
 
 class AgentManager {
@@ -16,6 +17,23 @@ class AgentManager {
       status: 'IDLE',
     });
     return agent;
+  }
+
+  private transitionAgent(agentId: string, newStatus: AgentStatus): void {
+    const agent = dbService.getAgent(agentId);
+    if (!agent) throw new Error(`Agent ${agentId} not found`);
+    assertTransition(agent.status, newStatus);
+    dbService.updateAgent(agentId, { status: newStatus });
+    this.broadcastStatus(agentId, newStatus);
+
+    // Fire notification event for interrupt states
+    if (isInterruptState(newStatus)) {
+      this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
+        agentId,
+        agentName: agent.name,
+        status: newStatus,
+      });
+    }
   }
 
   async assignTicket(
@@ -37,44 +55,40 @@ class AgentManager {
     const agentRecord = dbService.getAgent(agentId);
     if (!agentRecord) throw new Error(`Agent ${agentId} not found`);
 
-    // Determine working directory — either from config or settings
-    const projectDir = config.workingDirectory || settings.git?.workingDirectory || process.cwd();
+    // IDLE → ASSIGNED
+    this.transitionAgent(agentId, 'ASSIGNED');
+    dbService.updateAgent(agentId, {
+      assignedTicketId: ticketId,
+      assignedOrgAlias: config.orgAlias,
+      branchName: config.branchName,
+    });
+    dbService.updateTicket(ticketId, { status: 'in_progress', assignedAgentId: agentId });
 
-    // Set up git worktree for this agent
+    // ASSIGNED → BRANCHING
+    this.transitionAgent(agentId, 'BRANCHING');
+    dbService.chatSend(agentId, `Creating branch ${config.branchName}...`, 'system');
+
+    const projectDir = config.workingDirectory || settings.git?.workingDirectory || process.cwd();
     let agentWorkDir = projectDir;
     const gitService = new GitService(projectDir);
     const { valid } = await gitService.validate();
 
     if (valid) {
       try {
-        // Create worktree so the agent works in isolation
         agentWorkDir = await gitService.createWorktree(agentId, config.branchName);
         this.worktreePaths.set(agentId, agentWorkDir);
       } catch (err) {
         console.warn(`[AgentManager] Worktree creation failed, using project dir:`, err);
-        // Fall back to project dir
       }
     }
 
-    // Update agent assignment in DB
-    dbService.updateAgent(agentId, {
-      assignedTicketId: ticketId,
-      assignedOrgAlias: config.orgAlias,
-      branchName: config.branchName,
-      status: 'ASSIGNED',
-    });
+    // BRANCHING → DEVELOPING
+    this.transitionAgent(agentId, 'DEVELOPING');
 
-    // Update ticket status
-    dbService.updateTicket(ticketId, { status: 'in_progress', assignedAgentId: agentId });
-
-    // Create agent instance
     const instance = new AgentInstance(agentId, agentRecord.name, apiKey);
     this.agents.set(agentId, instance);
-
-    // Wire up events to broadcast to renderer
     this.wireEvents(instance);
 
-    // Start the agentic loop (async — runs in background)
     instance.start({
       ticketId,
       orgAlias: config.orgAlias,
@@ -87,7 +101,6 @@ class AgentManager {
   async sendMessage(agentId: string, message: string): Promise<void> {
     const instance = this.agents.get(agentId);
     if (!instance) {
-      // Agent not running — just save the chat message
       dbService.chatSend(agentId, message, 'user');
       return;
     }
@@ -98,8 +111,9 @@ class AgentManager {
     const agent = dbService.getAgent(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
 
-    dbService.updateAgent(agentId, { status: 'MERGING' });
-    this.broadcastStatus(agentId, 'MERGING');
+    // QA_READY → MERGING
+    this.transitionAgent(agentId, 'MERGING');
+    dbService.chatSend(agentId, 'Merging to base branch...', 'system');
 
     const settings = getSettings();
     const projectDir = settings.git?.workingDirectory || process.cwd();
@@ -113,10 +127,13 @@ class AgentManager {
         const result = await gitService.merge(agent.branchName, mergeStrategy);
 
         if (!result.success) {
-          // Merge conflict — abort and report
           await gitService.abortMerge();
+          // MERGING → ERROR
           dbService.updateAgent(agentId, { status: 'ERROR' });
           this.broadcastStatus(agentId, 'ERROR');
+          this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
+            agentId, agentName: agent.name, status: 'ERROR' as AgentStatus,
+          });
           dbService.chatSend(
             agentId,
             `Merge conflict detected in: ${result.conflictFiles?.join(', ') || 'unknown files'}`,
@@ -125,7 +142,6 @@ class AgentManager {
           return;
         }
 
-        // Clean up: remove worktree and delete branch
         try {
           await gitService.removeWorktree(agentId);
           this.worktreePaths.delete(agentId);
@@ -137,7 +153,7 @@ class AgentManager {
       }
     }
 
-    // Mark agent IDLE and ticket merged
+    // MERGING → IDLE
     dbService.updateAgent(agentId, {
       status: 'IDLE',
       assignedTicketId: undefined,
@@ -145,11 +161,25 @@ class AgentManager {
     });
     this.broadcastStatus(agentId, 'IDLE');
 
+    const ticketTitle = agent.assignedTicketId
+      ? dbService.getTicket(agent.assignedTicketId)?.title || agent.assignedTicketId
+      : '';
+
     if (agent.assignedTicketId) {
       dbService.updateTicket(agent.assignedTicketId, { status: 'merged' });
     }
 
-    // Clean up instance
+    dbService.chatSend(agentId, 'Work complete! Branch merged.', 'system');
+
+    // Notify ticket merged
+    this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
+      agentId,
+      agentName: agent.name,
+      status: 'IDLE' as AgentStatus,
+      event: 'merged',
+      ticketTitle,
+    });
+
     const instance = this.agents.get(agentId);
     if (instance) {
       instance.stop();
@@ -161,7 +191,9 @@ class AgentManager {
     const agent = dbService.getAgent(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
 
-    dbService.updateAgent(agentId, { status: 'REWORK' });
+    // QA_READY → REWORK
+    this.transitionAgent(agentId, 'REWORK');
+    dbService.chatSend(agentId, `Rework requested: ${feedback}`, 'system');
 
     if (agent.assignedTicketId) {
       dbService.updateTicket(agent.assignedTicketId, { status: 'in_progress' });
@@ -171,8 +203,6 @@ class AgentManager {
     if (instance) {
       await instance.handleHumanMessage(`REWORK REQUESTED: ${feedback}`);
     }
-
-    this.broadcastStatus(agentId, 'REWORK');
   }
 
   async stopAgent(agentId: string): Promise<void> {
@@ -182,7 +212,6 @@ class AgentManager {
       this.agents.delete(agentId);
     }
 
-    // Clean up worktree
     const agent = dbService.getAgent(agentId);
     if (agent) {
       const settings = getSettings();
@@ -196,6 +225,7 @@ class AgentManager {
     }
 
     dbService.updateAgent(agentId, { status: 'IDLE', assignedTicketId: undefined, branchName: undefined });
+    this.broadcastStatus(agentId, 'IDLE');
   }
 
   getAgentInstance(agentId: string): AgentInstance | undefined {
@@ -213,6 +243,15 @@ class AgentManager {
   private wireEvents(instance: AgentInstance): void {
     instance.on('status-changed', (status: AgentStatus) => {
       this.broadcastStatus(instance.id, status);
+
+      if (isInterruptState(status)) {
+        const agent = dbService.getAgent(instance.id);
+        this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
+          agentId: instance.id,
+          agentName: agent?.name || instance.name,
+          status,
+        });
+      }
     });
 
     instance.on('chat-message', (msg: unknown) => {
