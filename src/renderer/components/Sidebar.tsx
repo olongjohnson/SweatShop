@@ -27,7 +27,7 @@ export default function Sidebar({ agentId }: SidebarProps) {
       </div>
       <ResizableDivider direction="horizontal" onResize={handleVerticalResize} />
       <div style={{ flex: 1 - chatRatio, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <TerminalPane />
+        <TerminalPane agentId={agentId} />
       </div>
     </div>
   );
