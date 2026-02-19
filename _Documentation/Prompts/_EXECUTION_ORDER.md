@@ -9,7 +9,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 
 ## Execution Checklist
 
-- [ ] **01 — Build Pipeline** (`01_build_pipeline.md`)
+- [x] **01 — Build Pipeline** (`01_build_pipeline.md`)
   Convert the project from plain JS to TypeScript + React + Vite for the renderer, with proper Electron main/renderer/preload separation.
 
 - [ ] **02 — App Shell & Layout** (`02_app_shell.md`)
