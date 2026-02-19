@@ -61,6 +61,16 @@ const api: SweatShopAPI = {
     generate: (input) => ipcRenderer.invoke(IPC_CHANNELS.STORY_GENERATE, input),
   },
 
+  orchestrator: {
+    loadTickets: (ticketIds) => ipcRenderer.invoke(IPC_CHANNELS.ORCHESTRATOR_LOAD, ticketIds),
+    start: () => ipcRenderer.invoke(IPC_CHANNELS.ORCHESTRATOR_START),
+    stop: () => ipcRenderer.invoke(IPC_CHANNELS.ORCHESTRATOR_STOP),
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.ORCHESTRATOR_STATUS),
+    onProgress: (callback) => {
+      ipcRenderer.on(IPC_CHANNELS.ORCHESTRATOR_PROGRESS, (_, data) => callback(data));
+    },
+  },
+
   deathmark: {
     testConnection: () => ipcRenderer.invoke(IPC_CHANNELS.DEATHMARK_TEST_CONNECTION),
     sync: () => ipcRenderer.invoke(IPC_CHANNELS.DEATHMARK_SYNC),

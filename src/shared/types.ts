@@ -103,6 +103,16 @@ export interface RefinedPrompt {
   createdAt: string;
 }
 
+// ===== Orchestrator =====
+
+export interface OrchestratorStatus {
+  running: boolean;
+  total: number;
+  pending: number;
+  inProgress: number;
+  completed: number;
+}
+
 // ===== Preload API =====
 
 export interface SweatShopAPI {
@@ -157,6 +167,13 @@ export interface SweatShopAPI {
       acceptanceCriteria: string;
       suggestedLabels: string[];
     }>;
+  };
+  orchestrator: {
+    loadTickets: (ticketIds: string[]) => Promise<void>;
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
+    getStatus: () => Promise<OrchestratorStatus>;
+    onProgress: (callback: (status: OrchestratorStatus) => void) => void;
   };
   deathmark: {
     testConnection: () => Promise<{ success: boolean; error?: string }>;

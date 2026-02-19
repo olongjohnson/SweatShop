@@ -1118,3 +1118,62 @@ body {
   padding: 12px 18px;
   border-top: 1px solid var(--border);
 }
+
+/* ===== Orchestrator Bar ===== */
+
+.orchestrator-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.orchestrator-bar.running {
+  background: rgba(86, 156, 214, 0.12);
+  border-bottom: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.orchestrator-bar.stopped {
+  background: rgba(150, 150, 150, 0.08);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.orchestrator-stop-btn {
+  padding: 3px 10px !important;
+  font-size: 11px !important;
+}
+
+/* ===== Story Selection ===== */
+
+.story-checkbox {
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.story-row.selected {
+  background: rgba(86, 156, 214, 0.08);
+  border-color: var(--accent);
+}
+
+.dispatch-btn {
+  animation: pulse-bg 2s ease-in-out infinite;
+}
+
+@keyframes pulse-bg {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.select-all-btn {
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+  white-space: nowrap;
+}

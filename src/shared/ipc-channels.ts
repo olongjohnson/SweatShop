@@ -42,6 +42,13 @@ export const IPC_CHANNELS = {
   SETTINGS_GET: 'settings:get',
   SETTINGS_UPDATE: 'settings:update',
 
+  // Orchestrator
+  ORCHESTRATOR_LOAD: 'orchestrator:load',
+  ORCHESTRATOR_START: 'orchestrator:start',
+  ORCHESTRATOR_STOP: 'orchestrator:stop',
+  ORCHESTRATOR_STATUS: 'orchestrator:status',
+  ORCHESTRATOR_PROGRESS: 'orchestrator:progress',
+
   // Agent state changes (main → renderer push)
   AGENT_STATUS_CHANGED: 'agent:status-changed',
   AGENT_TERMINAL_DATA: 'agent:terminal-data',
