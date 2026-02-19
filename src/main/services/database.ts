@@ -101,7 +101,7 @@ function createTables(): void {
     CREATE TABLE IF NOT EXISTS refined_prompts (
       id TEXT PRIMARY KEY,
       ticket_id TEXT NOT NULL,
-      run_id TEXT NOT NULL,
+      run_id TEXT,
       prompt_text TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
@@ -355,4 +355,20 @@ export function incrementIntervention(runId: string, event: InterventionEvent): 
       interventions = ?, updated_at = ?
     WHERE id = ?
   `).run(JSON.stringify(interventions), now(), runId);
+}
+
+// ===== Refined Prompts =====
+
+export function createRefinedPrompt(data: {
+  ticketId: string;
+  runId?: string;
+  promptText: string;
+}): RefinedPrompt {
+  const id = uuid();
+  const createdAt = now();
+  db.prepare(`
+    INSERT INTO refined_prompts (id, ticket_id, run_id, prompt_text, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(id, data.ticketId, data.runId ?? null, data.promptText, createdAt);
+  return { id, ticketId: data.ticketId, runId: data.runId ?? '', promptText: data.promptText, createdAt };
 }

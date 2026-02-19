@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Ticket, TicketStatus, TicketSource } from '../../shared/types';
+import type { Ticket, TicketStatus, TicketSource, OrchestratorStatus } from '../../shared/types';
 import StoryForm from '../components/StoryForm';
 
 const STATUS_COLORS: Record<TicketStatus, string> = {
@@ -27,6 +27,8 @@ export default function StoriesView() {
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [orchStatus, setOrchStatus] = useState<OrchestratorStatus | null>(null);
 
   const loadTickets = async () => {
     const list = await window.sweatshop.tickets.list();
@@ -35,6 +37,10 @@ export default function StoriesView() {
 
   useEffect(() => {
     loadTickets();
+    // Load initial orchestrator status
+    window.sweatshop.orchestrator.getStatus().then(setOrchStatus);
+    // Subscribe to progress updates
+    window.sweatshop.orchestrator.onProgress(setOrchStatus);
   }, []);
 
   const filtered = useMemo(() => {
@@ -76,7 +82,41 @@ export default function StoriesView() {
 
   const handleDelete = async (id: string) => {
     await window.sweatshop.tickets.delete(id);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     loadTickets();
+  };
+
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map((t) => t.id)));
+    }
+  };
+
+  const handleDispatch = async () => {
+    if (selected.size === 0) return;
+    await window.sweatshop.orchestrator.loadTickets([...selected]);
+    await window.sweatshop.orchestrator.start();
+    setSelected(new Set());
+  };
+
+  const handleStopOrchestrator = async () => {
+    await window.sweatshop.orchestrator.stop();
   };
 
   return (
@@ -89,9 +129,31 @@ export default function StoriesView() {
         />
       )}
 
+      {/* Orchestrator status bar */}
+      {orchStatus && orchStatus.total > 0 && (
+        <div className={`orchestrator-bar ${orchStatus.running ? 'running' : 'stopped'}`}>
+          <span className="orchestrator-bar-text">
+            {orchStatus.running ? 'Dispatching' : 'Queue'}:{' '}
+            {orchStatus.completed}/{orchStatus.total} complete,{' '}
+            {orchStatus.inProgress} in progress,{' '}
+            {orchStatus.pending} pending
+          </span>
+          {orchStatus.running && (
+            <button className="btn-secondary orchestrator-stop-btn" onClick={handleStopOrchestrator}>
+              Stop
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="stories-header">
         <h2>Stories</h2>
         <div className="stories-header-actions">
+          {selected.size > 0 && (
+            <button className="btn-primary dispatch-btn" onClick={handleDispatch}>
+              Dispatch {selected.size} Selected
+            </button>
+          )}
           <button className="btn-primary" onClick={handleCreate}>+ New Story</button>
           <button className="btn-secondary" onClick={handleSync} disabled={syncing}>
             {syncing ? 'Syncing...' : 'Sync'}
@@ -130,6 +192,12 @@ export default function StoriesView() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+
+        {filtered.length > 0 && (
+          <button className="btn-secondary select-all-btn" onClick={toggleSelectAll}>
+            {selected.size === filtered.length ? 'Deselect All' : 'Select All'}
+          </button>
+        )}
       </div>
 
       <div className="stories-list">
@@ -141,10 +209,17 @@ export default function StoriesView() {
         {filtered.map((ticket) => (
           <div
             key={ticket.id}
-            className="story-row"
+            className={`story-row ${selected.has(ticket.id) ? 'selected' : ''}`}
             onClick={() => handleEdit(ticket)}
           >
             <div className="story-row-left">
+              <input
+                type="checkbox"
+                className="story-checkbox"
+                checked={selected.has(ticket.id)}
+                onClick={(e) => toggleSelect(ticket.id, e)}
+                onChange={() => {}}
+              />
               <span
                 className="story-status-dot"
                 style={{ background: STATUS_COLORS[ticket.status] }}

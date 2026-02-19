@@ -5,6 +5,7 @@ import { generateStoryDetails } from './services/story-generator';
 import * as deathmark from './services/deathmark';
 import { getSettings, updateSettings } from './services/settings';
 import { agentManager } from './services/agent-manager';
+import { orchestrator } from './services/orchestrator';
 
 export function registerIpcHandlers(): void {
   // Tickets
@@ -132,6 +133,23 @@ export function registerIpcHandlers(): void {
       }
     }
     return created;
+  });
+
+  // Orchestrator
+  ipcMain.handle(IPC_CHANNELS.ORCHESTRATOR_LOAD, async (_, ticketIds: string[]) => {
+    return orchestrator.loadTickets(ticketIds);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ORCHESTRATOR_START, async () => {
+    return orchestrator.start();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ORCHESTRATOR_STOP, async () => {
+    return orchestrator.stop();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ORCHESTRATOR_STATUS, () => {
+    return orchestrator.getStatus();
   });
 
   // Settings
