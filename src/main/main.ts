@@ -1,6 +1,8 @@
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
+import { initDatabase, closeDatabase } from './services/database';
+import { registerIpcHandlers } from './ipc-handlers';
 
 // Avoid GPU cache permission errors (VS Code terminal inherits restrictive paths)
 app.setPath('userData', path.join(os.homedir(), '.sweatshop'));
@@ -27,6 +29,12 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Initialize database at ~/.sweatshop/
+  initDatabase(app.getPath('userData'));
+
+  // Register IPC handlers before creating windows
+  registerIpcHandlers();
+
   createWindow();
 
   app.on('activate', () => {
@@ -40,4 +48,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  closeDatabase();
 });
