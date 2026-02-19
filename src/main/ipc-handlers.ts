@@ -1,6 +1,9 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
 import * as dbService from './services/database';
+import { generateStoryDetails } from './services/story-generator';
+import * as deathmark from './services/deathmark';
+import { getSettings, updateSettings } from './services/settings';
 
 export function registerIpcHandlers(): void {
   // Tickets
@@ -74,5 +77,51 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.RUN_CURRENT, (_, agentId: string) => {
     return dbService.currentRun(agentId);
+  });
+
+  // Story generation
+  ipcMain.handle(IPC_CHANNELS.STORY_GENERATE, async (_, input) => {
+    return generateStoryDetails(input);
+  });
+
+  // Deathmark
+  ipcMain.handle(IPC_CHANNELS.DEATHMARK_TEST_CONNECTION, async () => {
+    return deathmark.testConnection();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DEATHMARK_SYNC, async () => {
+    const partialTickets = await deathmark.fetchTickets();
+    const created: ReturnType<typeof dbService.createTicket>[] = [];
+    for (const t of partialTickets) {
+      // Skip if already imported (check by externalId)
+      const existing = dbService.listTickets().find(
+        (e) => e.externalId === t.externalId
+      );
+      if (existing) {
+        created.push(dbService.updateTicket(existing.id, t));
+      } else {
+        created.push(dbService.createTicket({
+          source: 'deathmark',
+          title: t.title || 'Untitled',
+          description: t.description || '',
+          acceptanceCriteria: t.acceptanceCriteria || '',
+          labels: t.labels || [],
+          priority: t.priority || 'medium',
+          status: t.status || 'backlog',
+          dependsOn: t.dependsOn || [],
+          externalId: t.externalId,
+        }));
+      }
+    }
+    return created;
+  });
+
+  // Settings
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, () => {
+    return getSettings();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_UPDATE, (_, data) => {
+    return updateSettings(data);
   });
 }

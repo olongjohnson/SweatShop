@@ -140,6 +140,52 @@ export interface SweatShopAPI {
     get: (id: string) => Promise<TicketRun | null>;
     current: (agentId: string) => Promise<TicketRun | null>;
   };
+  stories: {
+    generate: (input: { title: string; description?: string; projectContext?: string }) => Promise<{
+      description: string;
+      acceptanceCriteria: string;
+      suggestedLabels: string[];
+    }>;
+  };
+  deathmark: {
+    testConnection: () => Promise<{ success: boolean; error?: string }>;
+    sync: () => Promise<Ticket[]>;
+  };
+  settings: {
+    get: () => Promise<SweatShopSettings>;
+    update: (data: Partial<SweatShopSettings>) => Promise<SweatShopSettings>;
+  };
+}
+
+// ===== Settings =====
+
+export interface SweatShopSettings {
+  anthropicApiKey?: string;
+  deathmark?: {
+    instanceUrl: string;
+    accessToken?: string;
+    refreshToken?: string;
+    clientId?: string;
+    clientSecret?: string;
+    objectName: string;
+    fieldMapping: {
+      title: string;
+      description: string;
+      acceptanceCriteria: string;
+      priority: string;
+      status: string;
+      labels: string;
+    };
+  };
+  git?: {
+    baseBranch: string;
+    mergeStrategy: 'squash' | 'merge';
+  };
+  orgPool?: {
+    maxOrgs: number;
+    scratchDefPath: string;
+    defaultDurationDays: number;
+  };
 }
 
 declare global {

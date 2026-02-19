@@ -44,6 +44,20 @@ const api: SweatShopAPI = {
     get: (id) => ipcRenderer.invoke(IPC_CHANNELS.RUN_GET, id),
     current: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.RUN_CURRENT, agentId),
   },
+
+  stories: {
+    generate: (input) => ipcRenderer.invoke(IPC_CHANNELS.STORY_GENERATE, input),
+  },
+
+  deathmark: {
+    testConnection: () => ipcRenderer.invoke(IPC_CHANNELS.DEATHMARK_TEST_CONNECTION),
+    sync: () => ipcRenderer.invoke(IPC_CHANNELS.DEATHMARK_SYNC),
+  },
+
+  settings: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
+    update: (data) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_UPDATE, data),
+  },
 };
 
 contextBridge.exposeInMainWorld('sweatshop', api);
