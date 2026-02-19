@@ -27,6 +27,17 @@ export const IPC_CHANNELS = {
   RUN_GET: 'run:get',
   RUN_CURRENT: 'run:current',
 
+  // Story generation
+  STORY_GENERATE: 'story:generate',
+
+  // Deathmark
+  DEATHMARK_TEST_CONNECTION: 'deathmark:test-connection',
+  DEATHMARK_SYNC: 'deathmark:sync',
+
+  // Settings
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_UPDATE: 'settings:update',
+
   // Agent state changes (main → renderer push)
   AGENT_STATUS_CHANGED: 'agent:status-changed',
   AGENT_TERMINAL_DATA: 'agent:terminal-data',

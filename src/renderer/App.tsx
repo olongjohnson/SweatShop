@@ -3,6 +3,9 @@ import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import ResizableDivider from './components/ResizableDivider';
 import MainContent from './components/MainContent';
+import StoriesView from './views/StoriesView';
+
+type AppView = 'dashboard' | 'stories';
 
 const MOCK_AGENTS = [
   { id: 'agent-1', name: 'Agent 1', status: 'developing' as const },
@@ -13,6 +16,7 @@ const MOCK_AGENTS = [
 export default function App() {
   const [activeAgentId, setActiveAgentId] = useState('agent-1');
   const [sidebarWidth, setSidebarWidth] = useState(350);
+  const [view, setView] = useState<AppView>('dashboard');
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const handleSidebarResize = useCallback((delta: number) => {
@@ -29,14 +33,22 @@ export default function App() {
         agents={MOCK_AGENTS}
         activeAgentId={activeAgentId}
         onSelectAgent={setActiveAgentId}
+        activeView={view}
+        onNavigate={setView}
       />
-      <div className="app-body" ref={bodyRef}>
-        <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex' }}>
-          <Sidebar />
+      {view === 'dashboard' ? (
+        <div className="app-body" ref={bodyRef}>
+          <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex' }}>
+            <Sidebar />
+          </div>
+          <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
+          <MainContent />
         </div>
-        <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
-        <MainContent />
-      </div>
+      ) : (
+        <div className="app-body">
+          <StoriesView />
+        </div>
+      )}
     </div>
   );
 }
