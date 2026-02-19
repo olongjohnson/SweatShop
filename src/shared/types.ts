@@ -175,6 +175,11 @@ export interface SweatShopAPI {
     getStatus: () => Promise<OrchestratorStatus>;
     onProgress: (callback: (status: OrchestratorStatus) => void) => void;
   };
+  git: {
+    validate: (dir: string) => Promise<{ valid: boolean; error?: string }>;
+    getModifiedFiles: (agentId: string) => Promise<string[]>;
+    getDiffSummary: (agentId: string) => Promise<{ filesChanged: number; insertions: number; deletions: number }>;
+  };
   browser: {
     loadURL: (agentId: string, url: string) => Promise<void>;
     setBounds: (agentId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
@@ -218,6 +223,7 @@ export interface SweatShopSettings {
   git?: {
     baseBranch: string;
     mergeStrategy: 'squash' | 'merge';
+    workingDirectory: string;
   };
   orgPool?: {
     maxOrgs: number;

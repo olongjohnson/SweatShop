@@ -7,6 +7,7 @@ import { getSettings, updateSettings } from './services/settings';
 import { agentManager } from './services/agent-manager';
 import { orchestrator } from './services/orchestrator';
 import { browserManager } from './services/browser-manager';
+import { GitService } from './services/git-service';
 
 export function registerIpcHandlers(): void {
   // Tickets
@@ -151,6 +152,30 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.ORCHESTRATOR_STATUS, () => {
     return orchestrator.getStatus();
+  });
+
+  // Git
+  ipcMain.handle(IPC_CHANNELS.GIT_VALIDATE, async (_, dir: string) => {
+    const gitService = new GitService(dir);
+    return gitService.validate();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GIT_MODIFIED_FILES, async (_, agentId: string) => {
+    const agent = dbService.getAgent(agentId);
+    if (!agent?.branchName) return [];
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory || process.cwd();
+    const gitService = new GitService(projectDir);
+    return gitService.getModifiedFiles(agent.branchName);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GIT_DIFF_SUMMARY, async (_, agentId: string) => {
+    const agent = dbService.getAgent(agentId);
+    if (!agent?.branchName) return { filesChanged: 0, insertions: 0, deletions: 0 };
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory || process.cwd();
+    const gitService = new GitService(projectDir);
+    return gitService.getDiffSummary(agent.branchName);
   });
 
   // Browser

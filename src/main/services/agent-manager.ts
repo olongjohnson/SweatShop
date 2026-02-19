@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron';
 import { AgentInstance } from './agent-instance';
+import { GitService } from './git-service';
 import * as dbService from './database';
 import { getSettings } from './settings';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
@@ -7,6 +8,7 @@ import type { Agent, AgentStatus } from '../../shared/types';
 
 class AgentManager {
   private agents = new Map<string, AgentInstance>();
+  private worktreePaths = new Map<string, string>();
 
   async createAgent(name: string): Promise<Agent> {
     const agent = dbService.createAgent({
@@ -35,6 +37,25 @@ class AgentManager {
     const agentRecord = dbService.getAgent(agentId);
     if (!agentRecord) throw new Error(`Agent ${agentId} not found`);
 
+    // Determine working directory — either from config or settings
+    const projectDir = config.workingDirectory || settings.git?.workingDirectory || process.cwd();
+
+    // Set up git worktree for this agent
+    let agentWorkDir = projectDir;
+    const gitService = new GitService(projectDir);
+    const { valid } = await gitService.validate();
+
+    if (valid) {
+      try {
+        // Create worktree so the agent works in isolation
+        agentWorkDir = await gitService.createWorktree(agentId, config.branchName);
+        this.worktreePaths.set(agentId, agentWorkDir);
+      } catch (err) {
+        console.warn(`[AgentManager] Worktree creation failed, using project dir:`, err);
+        // Fall back to project dir
+      }
+    }
+
     // Update agent assignment in DB
     dbService.updateAgent(agentId, {
       assignedTicketId: ticketId,
@@ -59,7 +80,7 @@ class AgentManager {
       orgAlias: config.orgAlias,
       branchName: config.branchName,
       prompt: config.refinedPrompt,
-      workingDirectory: config.workingDirectory,
+      workingDirectory: agentWorkDir,
     });
   }
 
@@ -78,12 +99,62 @@ class AgentManager {
     if (!agent) throw new Error(`Agent ${agentId} not found`);
 
     dbService.updateAgent(agentId, { status: 'MERGING' });
+    this.broadcastStatus(agentId, 'MERGING');
 
-    if (agent.assignedTicketId) {
-      dbService.updateTicket(agent.assignedTicketId, { status: 'approved' });
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory || process.cwd();
+    const mergeStrategy = settings.git?.mergeStrategy || 'squash';
+
+    if (agent.branchName) {
+      const gitService = new GitService(projectDir);
+      const { valid } = await gitService.validate();
+
+      if (valid) {
+        const result = await gitService.merge(agent.branchName, mergeStrategy);
+
+        if (!result.success) {
+          // Merge conflict — abort and report
+          await gitService.abortMerge();
+          dbService.updateAgent(agentId, { status: 'ERROR' });
+          this.broadcastStatus(agentId, 'ERROR');
+          dbService.chatSend(
+            agentId,
+            `Merge conflict detected in: ${result.conflictFiles?.join(', ') || 'unknown files'}`,
+            'system'
+          );
+          return;
+        }
+
+        // Clean up: remove worktree and delete branch
+        try {
+          await gitService.removeWorktree(agentId);
+          this.worktreePaths.delete(agentId);
+        } catch { /* OK */ }
+
+        try {
+          await gitService.deleteBranch(agent.branchName);
+        } catch { /* branch may already be deleted */ }
+      }
     }
 
-    this.broadcastStatus(agentId, 'MERGING');
+    // Mark agent IDLE and ticket merged
+    dbService.updateAgent(agentId, {
+      status: 'IDLE',
+      assignedTicketId: undefined,
+      branchName: undefined,
+    });
+    this.broadcastStatus(agentId, 'IDLE');
+
+    if (agent.assignedTicketId) {
+      dbService.updateTicket(agent.assignedTicketId, { status: 'merged' });
+    }
+
+    // Clean up instance
+    const instance = this.agents.get(agentId);
+    if (instance) {
+      instance.stop();
+      this.agents.delete(agentId);
+    }
   }
 
   async rejectWork(agentId: string, feedback: string): Promise<void> {
@@ -110,11 +181,29 @@ class AgentManager {
       instance.stop();
       this.agents.delete(agentId);
     }
+
+    // Clean up worktree
+    const agent = dbService.getAgent(agentId);
+    if (agent) {
+      const settings = getSettings();
+      const projectDir = settings.git?.workingDirectory || process.cwd();
+      const gitService = new GitService(projectDir);
+
+      try {
+        await gitService.removeWorktree(agentId);
+        this.worktreePaths.delete(agentId);
+      } catch { /* OK */ }
+    }
+
     dbService.updateAgent(agentId, { status: 'IDLE', assignedTicketId: undefined, branchName: undefined });
   }
 
   getAgentInstance(agentId: string): AgentInstance | undefined {
     return this.agents.get(agentId);
+  }
+
+  getWorktreePath(agentId: string): string | undefined {
+    return this.worktreePaths.get(agentId);
   }
 
   listActiveAgents(): AgentInstance[] {
