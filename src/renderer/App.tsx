@@ -39,7 +39,7 @@ export default function App() {
       {view === 'dashboard' ? (
         <div className="app-body" ref={bodyRef}>
           <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex' }}>
-            <Sidebar />
+            <Sidebar agentId={activeAgentId} />
           </div>
           <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
           <MainContent />
