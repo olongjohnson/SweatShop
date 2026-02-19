@@ -30,7 +30,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **07 — Terminal Pane** (`07_terminal_pane.md`)
   Per-agent xterm.js terminal with node-pty. Live command output streaming from agent processes.
 
-- [ ] **08 — Orchestrator** (`08_orchestrator.md`)
+- [x] **08 — Orchestrator** (`08_orchestrator.md`)
   Prompt refinement engine, dependency analysis, agent dispatch, work queue management.
 
 - [ ] **09 — Browser Pane** (`09_browser_pane.md`)
