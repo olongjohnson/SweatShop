@@ -12,7 +12,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **01 — Build Pipeline** (`01_build_pipeline.md`)
   Convert the project from plain JS to TypeScript + React + Vite for the renderer, with proper Electron main/renderer/preload separation.
 
-- [ ] **02 — App Shell & Layout** (`02_app_shell.md`)
+- [x] **02 — App Shell & Layout** (`02_app_shell.md`)
   Build the main window layout: top nav/tab bar, resizable left sidebar (chat + terminal), main content area (browser pane). Dark theme. No functionality yet — just the skeleton.
 
 - [ ] **03 — Data Layer** (`03_data_layer.md`)
