@@ -5,9 +5,10 @@ import ResizableDivider from './components/ResizableDivider';
 import BrowserPane from './components/BrowserPane';
 import NotificationSystem from './components/NotificationSystem';
 import StoriesView from './views/StoriesView';
+import AnalyticsView from './views/AnalyticsView';
 import type { AgentStatus, OrchestratorStatus } from '../shared/types';
 
-type AppView = 'dashboard' | 'stories';
+type AppView = 'dashboard' | 'stories' | 'analytics';
 
 interface AgentTab {
   id: string;
@@ -63,7 +64,6 @@ export default function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Ctrl+1 through Ctrl+9: switch agent tabs
       if (e.ctrlKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
         const idx = parseInt(e.key) - 1;
@@ -74,7 +74,6 @@ export default function App() {
         return;
       }
 
-      // Ctrl+N: jump to next agent needing input
       if (e.ctrlKey && !e.shiftKey && e.key === 'n') {
         e.preventDefault();
         const needsAttention = agents.find(
@@ -87,7 +86,6 @@ export default function App() {
         return;
       }
 
-      // Ctrl+Shift+N: jump to next agent with any notification
       if (e.ctrlKey && e.shiftKey && e.key === 'N') {
         e.preventDefault();
         const hasNotif = agents.find(
@@ -100,7 +98,6 @@ export default function App() {
         return;
       }
 
-      // Ctrl+Shift+A: approve current agent
       if (e.ctrlKey && e.shiftKey && e.key === 'A') {
         e.preventDefault();
         const current = agents.find((a) => a.id === activeAgentId);
@@ -136,6 +133,33 @@ export default function App() {
     setView('dashboard');
   }, []);
 
+  const renderBody = () => {
+    switch (view) {
+      case 'stories':
+        return (
+          <div className="app-body">
+            <StoriesView />
+          </div>
+        );
+      case 'analytics':
+        return (
+          <div className="app-body">
+            <AnalyticsView />
+          </div>
+        );
+      default:
+        return (
+          <div className="app-body" ref={bodyRef}>
+            <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex' }}>
+              <Sidebar agentId={activeAgentId} />
+            </div>
+            <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
+            <BrowserPane agentId={activeAgentId} />
+          </div>
+        );
+    }
+  };
+
   return (
     <div className="app">
       <TitleBar
@@ -146,19 +170,7 @@ export default function App() {
         activeView={view}
         onNavigate={setView}
       />
-      {view === 'dashboard' ? (
-        <div className="app-body" ref={bodyRef}>
-          <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex' }}>
-            <Sidebar agentId={activeAgentId} />
-          </div>
-          <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
-          <BrowserPane agentId={activeAgentId} />
-        </div>
-      ) : (
-        <div className="app-body">
-          <StoriesView />
-        </div>
-      )}
+      {renderBody()}
 
       <NotificationSystem onSelectAgent={handleSelectAgent} />
 
@@ -177,8 +189,8 @@ export default function App() {
               </div>
             </div>
             <div className="completion-actions">
-              <button className="btn-secondary" onClick={() => { setCompletionSummary(null); setView('stories'); }}>
-                View Stories
+              <button className="btn-secondary" onClick={() => { setCompletionSummary(null); setView('analytics'); }}>
+                View Analytics
               </button>
               <button className="btn-primary" onClick={() => setCompletionSummary(null)}>
                 Close

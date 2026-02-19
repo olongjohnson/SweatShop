@@ -113,6 +113,58 @@ export interface OrchestratorStatus {
   completed: number;
 }
 
+// ===== Analytics =====
+
+export interface RunMetrics {
+  ticketId: string;
+  agentId: string;
+  status: string;
+  startedAt: string;
+  completedAt?: string;
+  wallClockDurationMs: number;
+  activeDevTimeMs: number;
+  humanWaitTimeMs: number;
+  humanInterventionCount: number;
+  reworkCount: number;
+  promptTokensUsed: number;
+  completionTokensUsed: number;
+  estimatedCostUsd: number;
+  autonomyScore: number;
+}
+
+export interface AgentMetrics {
+  agentId: string;
+  agentName: string;
+  ticketsCompleted: number;
+  avgInterventionsPerTicket: number;
+  avgReworkRate: number;
+  avgDurationMs: number;
+  totalTokensUsed: number;
+  totalEstimatedCostUsd: number;
+}
+
+export interface SessionMetrics {
+  totalTickets: number;
+  completedTickets: number;
+  failedTickets: number;
+  totalSessionTimeMs: number;
+  totalHumanWaitTimeMs: number;
+  totalActiveDevTimeMs: number;
+  totalInterventions: number;
+  totalReworks: number;
+  firstPassApprovalRate: number;
+  autonomyScore: number;
+  velocity: number;
+  humanEfficiencyRatio: number;
+  totalCostUsd: number;
+  costPerTicketUsd: number;
+}
+
+export interface TrendPoint {
+  period: string;
+  value: number;
+}
+
 // ===== Notifications =====
 
 export interface AgentNotification {
@@ -212,6 +264,13 @@ export interface SweatShopAPI {
   settings: {
     get: () => Promise<SweatShopSettings>;
     update: (data: Partial<SweatShopSettings>) => Promise<SweatShopSettings>;
+  };
+  analytics: {
+    getRunMetrics: (runId: string) => Promise<RunMetrics | null>;
+    getAgentMetrics: (agentId: string) => Promise<AgentMetrics>;
+    getSessionMetrics: (options?: { since?: string }) => Promise<SessionMetrics>;
+    getTrend: (metric: string, options: { period: 'day' | 'week'; count: number }) => Promise<TrendPoint[]>;
+    export: (options?: { since?: string }) => Promise<string>;
   };
 }
 

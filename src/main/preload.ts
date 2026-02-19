@@ -104,6 +104,14 @@ const api: SweatShopAPI = {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
     update: (data) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_UPDATE, data),
   },
+
+  analytics: {
+    getRunMetrics: (runId) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_RUN, runId),
+    getAgentMetrics: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_AGENT, agentId),
+    getSessionMetrics: (options) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_SESSION, options),
+    getTrend: (metric, options) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_TREND, metric, options),
+    export: (options) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_EXPORT, options),
+  },
 };
 
 contextBridge.exposeInMainWorld('sweatshop', api);

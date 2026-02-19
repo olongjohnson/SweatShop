@@ -9,6 +9,7 @@ import { orchestrator } from './services/orchestrator';
 import { browserManager } from './services/browser-manager';
 import { GitService } from './services/git-service';
 import { orgPool } from './services/org-pool';
+import { analytics } from './services/analytics';
 
 export function registerIpcHandlers(): void {
   // Tickets
@@ -236,5 +237,26 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.SETTINGS_UPDATE, (_, data) => {
     return updateSettings(data);
+  });
+
+  // Analytics
+  ipcMain.handle(IPC_CHANNELS.ANALYTICS_RUN, (_, runId: string) => {
+    return analytics.getRunMetrics(runId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ANALYTICS_AGENT, (_, agentId: string) => {
+    return analytics.getAgentMetrics(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ANALYTICS_SESSION, (_, options) => {
+    return analytics.getSessionMetrics(options);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ANALYTICS_TREND, (_, metric: string, options) => {
+    return analytics.getTrend(metric, options);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ANALYTICS_EXPORT, (_, options) => {
+    return analytics.exportMetrics(options);
   });
 }

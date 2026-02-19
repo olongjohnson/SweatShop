@@ -68,6 +68,13 @@ export const IPC_CHANNELS = {
   BROWSER_SHOW: 'browser:show',
   BROWSER_HIDE_ALL: 'browser:hide-all',
 
+  // Analytics
+  ANALYTICS_RUN: 'analytics:run',
+  ANALYTICS_AGENT: 'analytics:agent',
+  ANALYTICS_SESSION: 'analytics:session',
+  ANALYTICS_TREND: 'analytics:trend',
+  ANALYTICS_EXPORT: 'analytics:export',
+
   // Agent state changes (main → renderer push)
   AGENT_STATUS_CHANGED: 'agent:status-changed',
   AGENT_TERMINAL_DATA: 'agent:terminal-data',

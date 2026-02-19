@@ -382,6 +382,40 @@ export function currentRun(agentId: string): TicketRun | null {
   return row ? rowToRun(row as Record<string, unknown>) : null;
 }
 
+export function createRun(data: {
+  id: string;
+  ticketId: string;
+  agentId: string;
+  orgAlias?: string;
+  branchName?: string;
+}): TicketRun {
+  const ts = now();
+  db.prepare(`
+    INSERT INTO ticket_runs (id, ticket_id, agent_id, org_alias, branch_name, status, started_at)
+    VALUES (?, ?, ?, ?, ?, 'running', ?)
+  `).run(data.id, data.ticketId, data.agentId, data.orgAlias ?? null, data.branchName ?? null, ts);
+  return getRun(data.id)!;
+}
+
+export function updateRun(id: string, data: Partial<{
+  status: string;
+  completedAt: string;
+  promptTokensUsed: number;
+  completionTokensUsed: number;
+  reworkCount: number;
+}>): void {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
+  if (data.completedAt !== undefined) { fields.push('completed_at = ?'); values.push(data.completedAt); }
+  if (data.promptTokensUsed !== undefined) { fields.push('prompt_tokens_used = ?'); values.push(data.promptTokensUsed); }
+  if (data.completionTokensUsed !== undefined) { fields.push('completion_tokens_used = ?'); values.push(data.completionTokensUsed); }
+  if (data.reworkCount !== undefined) { fields.push('rework_count = ?'); values.push(data.reworkCount); }
+  if (fields.length === 0) return;
+  values.push(id);
+  db.prepare(`UPDATE ticket_runs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+}
+
 export function incrementIntervention(runId: string, event: InterventionEvent): void {
   const run = getRun(runId);
   if (!run) throw new Error(`Run ${runId} not found`);
