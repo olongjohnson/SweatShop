@@ -45,7 +45,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **12 — Agent Lifecycle & Notifications** (`12_agent_lifecycle.md`)
   Full state machine (IDLE → ASSIGNED → DEVELOPING → QA_READY → etc.), tab badges, toast notifications, keyboard shortcuts.
 
-- [ ] **13 — Analytics & Metrics** (`13_analytics.md`)
+- [x] **13 — Analytics & Metrics** (`13_analytics.md`)
   Per-ticket and per-agent metrics tracking: human interventions, timing, cost, autonomy scoring, analytics dashboard view.
 
 ## Notes
