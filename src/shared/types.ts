@@ -1,9 +1,144 @@
+// ===== Agent States =====
+
+export type AgentStatus =
+  | 'IDLE'
+  | 'ASSIGNED'
+  | 'BRANCHING'
+  | 'DEVELOPING'
+  | 'NEEDS_INPUT'
+  | 'PROVISIONING'
+  | 'QA_READY'
+  | 'MERGING'
+  | 'REWORK'
+  | 'ERROR';
+
+// ===== Ticket Types =====
+
+export type TicketSource = 'manual' | 'deathmark';
+
+export type TicketStatus =
+  | 'backlog'
+  | 'ready'
+  | 'in_progress'
+  | 'qa_review'
+  | 'approved'
+  | 'merged'
+  | 'rejected';
+
+export interface Ticket {
+  id: string;
+  externalId?: string;
+  source: TicketSource;
+  title: string;
+  description: string;
+  acceptanceCriteria: string;
+  labels: string[];
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: TicketStatus;
+  dependsOn: string[];
+  assignedAgentId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Agent {
+  id: string;
+  name: string;
+  status: AgentStatus;
+  assignedTicketId?: string;
+  assignedOrgAlias?: string;
+  branchName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScratchOrg {
+  id: string;
+  alias: string;
+  status: 'available' | 'leased' | 'expired' | 'error';
+  assignedAgentId?: string;
+  loginUrl?: string;
+  expiresAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  agentId: string;
+  role: 'agent' | 'user' | 'system';
+  content: string;
+  timestamp: string;
+}
+
+export interface TicketRun {
+  id: string;
+  ticketId: string;
+  agentId: string;
+  orgAlias?: string;
+  branchName?: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  startedAt: string;
+  completedAt?: string;
+  humanInterventionCount: number;
+  reworkCount: number;
+  promptTokensUsed: number;
+  completionTokensUsed: number;
+  interventions: InterventionEvent[];
+}
+
+export interface InterventionEvent {
+  timestamp: string;
+  type: 'question' | 'rework' | 'guidance' | 'error_recovery';
+  agentMessage: string;
+  humanResponse?: string;
+  waitDurationMs: number;
+}
+
+export interface RefinedPrompt {
+  id: string;
+  ticketId: string;
+  runId: string;
+  promptText: string;
+  createdAt: string;
+}
+
+// ===== Preload API =====
+
 export interface SweatShopAPI {
   platform: string;
   versions: {
     chrome: string;
     node: string;
     electron: string;
+  };
+  tickets: {
+    list: (filter?: { status?: TicketStatus }) => Promise<Ticket[]>;
+    get: (id: string) => Promise<Ticket | null>;
+    create: (data: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Ticket>;
+    update: (id: string, data: Partial<Ticket>) => Promise<Ticket>;
+    delete: (id: string) => Promise<void>;
+  };
+  agents: {
+    list: () => Promise<Agent[]>;
+    get: (id: string) => Promise<Agent | null>;
+    create: (data: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Agent>;
+    update: (id: string, data: Partial<Agent>) => Promise<Agent>;
+  };
+  orgs: {
+    list: () => Promise<ScratchOrg[]>;
+    claim: (agentId: string) => Promise<ScratchOrg | null>;
+    release: (orgId: string) => Promise<void>;
+  };
+  chat: {
+    history: (agentId: string) => Promise<ChatMessage[]>;
+    send: (agentId: string, content: string) => Promise<ChatMessage>;
+    onMessage: (callback: (msg: ChatMessage) => void) => void;
+  };
+  runs: {
+    list: (ticketId?: string) => Promise<TicketRun[]>;
+    get: (id: string) => Promise<TicketRun | null>;
+    current: (agentId: string) => Promise<TicketRun | null>;
   };
 }
 
