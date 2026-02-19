@@ -39,7 +39,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **10 — Git Integration** (`10_git_integration.md`)
   Per-agent feature branch management. Create, commit, merge, conflict detection.
 
-- [ ] **11 — Org Controller & Provisioning** (`11_org_controller.md`)
+- [x] **11 — Org Controller & Provisioning** (`11_org_controller.md`)
   Scratch org pool management, agent-to-org access control, automated provisioning script (deploy, data, users, permsets).
 
 - [ ] **12 — Agent Lifecycle & Notifications** (`12_agent_lifecycle.md`)
