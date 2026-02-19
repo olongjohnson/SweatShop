@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import AgentTabBar from './AgentTabBar';
 import logoUrl from '../icon.png';
+import type { AgentStatus } from '../../shared/types';
 
 type AppView = 'dashboard' | 'stories';
 
-interface Agent {
+interface AgentTab {
   id: string;
   name: string;
-  status: 'developing' | 'needs-input' | 'idle';
+  status: AgentStatus;
 }
 
 interface OrgStatus {
@@ -18,14 +19,15 @@ interface OrgStatus {
 }
 
 interface TitleBarProps {
-  agents: Agent[];
+  agents: AgentTab[];
   activeAgentId: string;
   onSelectAgent: (id: string) => void;
+  onAddAgent: () => void;
   activeView: AppView;
   onNavigate: (view: AppView) => void;
 }
 
-export default function TitleBar({ agents, activeAgentId, onSelectAgent, activeView, onNavigate }: TitleBarProps) {
+export default function TitleBar({ agents, activeAgentId, onSelectAgent, onAddAgent, activeView, onNavigate }: TitleBarProps) {
   const [orgStatus, setOrgStatus] = useState<OrgStatus | null>(null);
 
   useEffect(() => {
@@ -52,6 +54,7 @@ export default function TitleBar({ agents, activeAgentId, onSelectAgent, activeV
           agents={agents}
           activeAgentId={activeAgentId}
           onSelectAgent={(id) => { onSelectAgent(id); onNavigate('dashboard'); }}
+          onAddAgent={onAddAgent}
         />
       </div>
       {orgStatus && orgStatus.total > 0 && (
