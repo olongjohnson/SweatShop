@@ -42,7 +42,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **11 — Org Controller & Provisioning** (`11_org_controller.md`)
   Scratch org pool management, agent-to-org access control, automated provisioning script (deploy, data, users, permsets).
 
-- [ ] **12 — Agent Lifecycle & Notifications** (`12_agent_lifecycle.md`)
+- [x] **12 — Agent Lifecycle & Notifications** (`12_agent_lifecycle.md`)
   Full state machine (IDLE → ASSIGNED → DEVELOPING → QA_READY → etc.), tab badges, toast notifications, keyboard shortcuts.
 
 - [ ] **13 — Analytics & Metrics** (`13_analytics.md`)
