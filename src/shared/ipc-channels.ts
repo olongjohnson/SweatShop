@@ -20,6 +20,10 @@ export const IPC_CHANNELS = {
   ORG_LIST: 'org:list',
   ORG_CLAIM: 'org:claim',
   ORG_RELEASE: 'org:release',
+  ORG_STATUS: 'org:status',
+  ORG_DISCOVER: 'org:discover',
+  ORG_REGISTER: 'org:register',
+  ORG_REMOVE: 'org:remove',
 
   // Chat
   CHAT_HISTORY: 'chat:history',

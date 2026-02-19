@@ -8,6 +8,7 @@ import { agentManager } from './services/agent-manager';
 import { orchestrator } from './services/orchestrator';
 import { browserManager } from './services/browser-manager';
 import { GitService } from './services/git-service';
+import { orgPool } from './services/org-pool';
 
 export function registerIpcHandlers(): void {
   // Tickets
@@ -75,6 +76,22 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.ORG_RELEASE, (_, orgId: string) => {
     return dbService.releaseOrg(orgId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ORG_STATUS, async () => {
+    return orgPool.getStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ORG_DISCOVER, async () => {
+    return orgPool.discoverOrgs();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ORG_REGISTER, async (_, alias: string) => {
+    return orgPool.registerOrg(alias);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ORG_REMOVE, async (_, orgId: string) => {
+    return orgPool.removeOrg(orgId);
   });
 
   // Chat

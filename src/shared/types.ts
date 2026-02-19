@@ -150,6 +150,10 @@ export interface SweatShopAPI {
     list: () => Promise<ScratchOrg[]>;
     claim: (agentId: string) => Promise<ScratchOrg | null>;
     release: (orgId: string) => Promise<void>;
+    getStatus: () => Promise<{ total: number; available: number; leased: number; expired: number }>;
+    discover: () => Promise<ScratchOrg[]>;
+    register: (alias: string) => Promise<ScratchOrg>;
+    remove: (orgId: string) => Promise<void>;
   };
   chat: {
     history: (agentId: string) => Promise<ChatMessage[]>;
@@ -229,6 +233,8 @@ export interface SweatShopSettings {
     maxOrgs: number;
     scratchDefPath: string;
     defaultDurationDays: number;
+    dataPlanPath?: string;
+    permissionSets?: string[];
   };
 }
 

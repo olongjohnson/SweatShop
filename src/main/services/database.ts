@@ -305,6 +305,43 @@ export function releaseOrg(orgId: string): void {
   `).run(now(), orgId);
 }
 
+export function registerOrg(data: {
+  alias: string;
+  status: ScratchOrg['status'];
+  expiresAt?: string;
+  loginUrl?: string;
+}): ScratchOrg {
+  const id = uuid();
+  const createdAt = now();
+  db.prepare(`
+    INSERT INTO scratch_orgs (id, alias, status, login_url, expires_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, data.alias, data.status, data.loginUrl ?? null, data.expiresAt ?? null, createdAt, createdAt);
+  return {
+    id, alias: data.alias, status: data.status,
+    loginUrl: data.loginUrl, expiresAt: data.expiresAt,
+    createdAt, updatedAt: createdAt,
+  };
+}
+
+export function updateOrg(id: string, data: Partial<ScratchOrg>): void {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
+  if (data.loginUrl !== undefined) { fields.push('login_url = ?'); values.push(data.loginUrl); }
+  if (data.expiresAt !== undefined) { fields.push('expires_at = ?'); values.push(data.expiresAt); }
+  if (data.assignedAgentId !== undefined) { fields.push('assigned_agent_id = ?'); values.push(data.assignedAgentId); }
+  if (fields.length === 0) return;
+  fields.push('updated_at = ?');
+  values.push(now());
+  values.push(id);
+  db.prepare(`UPDATE scratch_orgs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+}
+
+export function deleteOrg(id: string): void {
+  db.prepare('DELETE FROM scratch_orgs WHERE id = ?').run(id);
+}
+
 // ===== Chat Messages =====
 
 export function chatHistory(agentId: string): ChatMessage[] {

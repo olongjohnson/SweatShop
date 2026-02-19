@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import AgentTabBar from './AgentTabBar';
 import logoUrl from '../icon.png';
 
@@ -10,6 +10,13 @@ interface Agent {
   status: 'developing' | 'needs-input' | 'idle';
 }
 
+interface OrgStatus {
+  total: number;
+  available: number;
+  leased: number;
+  expired: number;
+}
+
 interface TitleBarProps {
   agents: Agent[];
   activeAgentId: string;
@@ -19,6 +26,21 @@ interface TitleBarProps {
 }
 
 export default function TitleBar({ agents, activeAgentId, onSelectAgent, activeView, onNavigate }: TitleBarProps) {
+  const [orgStatus, setOrgStatus] = useState<OrgStatus | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const status = await window.sweatshop.orgs.getStatus();
+        if (mounted) setOrgStatus(status);
+      } catch { /* org pool not initialized yet */ }
+    };
+    load();
+    const interval = setInterval(load, 10000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
+
   return (
     <div className="titlebar">
       <div className="titlebar-brand" onClick={() => onNavigate('dashboard')} style={{ cursor: 'pointer' }}>
@@ -32,6 +54,13 @@ export default function TitleBar({ agents, activeAgentId, onSelectAgent, activeV
           onSelectAgent={(id) => { onSelectAgent(id); onNavigate('dashboard'); }}
         />
       </div>
+      {orgStatus && orgStatus.total > 0 && (
+        <div className="org-pool-indicator" title={`${orgStatus.available} available, ${orgStatus.leased} leased, ${orgStatus.expired} expired`}>
+          <span className="org-pool-dot" />
+          <span className="org-pool-label">Orgs</span>
+          <span className="org-pool-count">{orgStatus.available}/{orgStatus.total}</span>
+        </div>
+      )}
       <div className="titlebar-actions">
         <button
           title="Stories"

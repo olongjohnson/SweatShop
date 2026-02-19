@@ -41,6 +41,10 @@ const api: SweatShopAPI = {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.ORG_LIST),
     claim: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.ORG_CLAIM, agentId),
     release: (orgId) => ipcRenderer.invoke(IPC_CHANNELS.ORG_RELEASE, orgId),
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.ORG_STATUS),
+    discover: () => ipcRenderer.invoke(IPC_CHANNELS.ORG_DISCOVER),
+    register: (alias) => ipcRenderer.invoke(IPC_CHANNELS.ORG_REGISTER, alias),
+    remove: (orgId) => ipcRenderer.invoke(IPC_CHANNELS.ORG_REMOVE, orgId),
   },
 
   chat: {
