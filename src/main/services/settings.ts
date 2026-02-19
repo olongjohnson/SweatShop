@@ -32,6 +32,8 @@ export interface SweatShopSettings {
     maxOrgs: number;
     scratchDefPath: string;
     defaultDurationDays: number;
+    dataPlanPath?: string;
+    permissionSets?: string[];
   };
 }
 
