@@ -27,7 +27,7 @@ Execute these prompts sequentially in Claude Code (Opus 4.6). Each prompt builds
 - [x] **06 — Chat Pane** (`06_chat_pane.md`)
   Per-agent chat UI with message history, user input, quick actions (approve/reject). Wired to agent runtime via IPC.
 
-- [ ] **07 — Terminal Pane** (`07_terminal_pane.md`)
+- [x] **07 — Terminal Pane** (`07_terminal_pane.md`)
   Per-agent xterm.js terminal with node-pty. Live command output streaming from agent processes.
 
 - [ ] **08 — Orchestrator** (`08_orchestrator.md`)
