@@ -12,6 +12,7 @@ interface AgentTabBarProps {
   activeAgentId: string;
   onSelectAgent: (id: string) => void;
   onAddAgent: () => void;
+  onCloseAgent: (id: string) => void;
 }
 
 function statusClass(status: AgentStatus): string {
@@ -40,11 +41,11 @@ function hasBadge(status: AgentStatus): boolean {
   return status === 'QA_READY' || status === 'NEEDS_INPUT' || status === 'ERROR';
 }
 
-export default function AgentTabBar({ agents, activeAgentId, onSelectAgent, onAddAgent }: AgentTabBarProps) {
+export default function AgentTabBar({ agents, activeAgentId, onSelectAgent, onAddAgent, onCloseAgent }: AgentTabBarProps) {
   return (
     <div className="agent-tabs">
       {agents.map((agent) => (
-        <button
+        <div
           key={agent.id}
           className={`agent-tab ${agent.id === activeAgentId ? 'active' : ''}`}
           onClick={() => onSelectAgent(agent.id)}
@@ -57,7 +58,17 @@ export default function AgentTabBar({ agents, activeAgentId, onSelectAgent, onAd
               {'\u25CF'}
             </span>
           )}
-        </button>
+          <span
+            className="agent-tab-close"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCloseAgent(agent.id);
+            }}
+            title="Close agent"
+          >
+            &times;
+          </span>
+        </div>
       ))}
       <button className="agent-tab-add" title="Add agent" onClick={onAddAgent}>+</button>
     </div>

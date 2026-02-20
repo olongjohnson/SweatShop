@@ -29,6 +29,7 @@ const api: SweatShopAPI = {
     reject: (agentId, feedback) =>
       ipcRenderer.invoke(IPC_CHANNELS.AGENT_REJECT, agentId, feedback),
     stop: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STOP, agentId),
+    delete: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_DELETE, agentId),
     onStatusChanged: (callback) => {
       ipcRenderer.on(IPC_CHANNELS.AGENT_STATUS_CHANGED, (_, data) => callback(data));
     },
@@ -98,6 +99,10 @@ const api: SweatShopAPI = {
   deathmark: {
     testConnection: () => ipcRenderer.invoke(IPC_CHANNELS.DEATHMARK_TEST_CONNECTION),
     sync: () => ipcRenderer.invoke(IPC_CHANNELS.DEATHMARK_SYNC),
+  },
+
+  claude: {
+    authStatus: () => ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_AUTH_STATUS),
   },
 
   settings: {

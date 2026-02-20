@@ -1,5 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { getSettings } from './settings';
+import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk';
+
+// Prevent tsc from compiling dynamic import() into require()
+// eslint-disable-next-line @typescript-eslint/no-implied-eval
+const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
 
 interface StoryInput {
   title: string;
@@ -13,26 +16,7 @@ interface StoryOutput {
   suggestedLabels: string[];
 }
 
-export async function generateStoryDetails(input: StoryInput): Promise<StoryOutput> {
-  const settings = getSettings();
-  const apiKey = settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('Anthropic API key not configured. Set it in Settings or ANTHROPIC_API_KEY env var.');
-  }
-
-  const client = new Anthropic({ apiKey });
-
-  const userContent = [
-    `Title: ${input.title}`,
-    input.description ? `Existing description: ${input.description}` : '',
-    input.projectContext ? `Project context: ${input.projectContext}` : '',
-  ].filter(Boolean).join('\n\n');
-
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    system: `You are a Salesforce development story writer. Given a ticket title and optional context, generate a detailed user story with acceptance criteria suitable for an AI agent to implement.
+const STORY_SYSTEM_PROMPT = `You are a Salesforce development story writer. Given a ticket title and optional context, generate a detailed user story with acceptance criteria suitable for an AI agent to implement.
 
 Respond with ONLY valid JSON in this exact format:
 {
@@ -41,11 +25,33 @@ Respond with ONLY valid JSON in this exact format:
   "suggestedLabels": ["label1", "label2"]
 }
 
-Keep descriptions focused on Salesforce development (Apex, LWC, metadata, etc). Make acceptance criteria specific and testable.`,
-    messages: [{ role: 'user', content: userContent }],
-  });
+Keep descriptions focused on Salesforce development (Apex, LWC, metadata, etc). Make acceptance criteria specific and testable.`;
 
-  const text = message.content[0].type === 'text' ? message.content[0].text : '';
+export async function generateStoryDetails(input: StoryInput): Promise<StoryOutput> {
+  const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
+
+  const userContent = [
+    `Title: ${input.title}`,
+    input.description ? `Existing description: ${input.description}` : '',
+    input.projectContext ? `Project context: ${input.projectContext}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  let text = '';
+
+  for await (const message of query({
+    prompt: userContent,
+    options: {
+      systemPrompt: STORY_SYSTEM_PROMPT,
+      tools: [],
+      maxTurns: 1,
+      settingSources: [],
+      persistSession: false,
+    },
+  })) {
+    if (message.type === 'result' && message.subtype === 'success') {
+      text = (message as SDKResultSuccess).result;
+    }
+  }
 
   try {
     const parsed = JSON.parse(text);

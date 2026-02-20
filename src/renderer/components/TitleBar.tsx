@@ -3,7 +3,7 @@ import AgentTabBar from './AgentTabBar';
 import logoUrl from '../icon.png';
 import type { AgentStatus } from '../../shared/types';
 
-type AppView = 'dashboard' | 'stories' | 'analytics';
+type AppView = 'dashboard' | 'stories' | 'analytics' | 'settings';
 
 interface AgentTab {
   id: string;
@@ -23,11 +23,12 @@ interface TitleBarProps {
   activeAgentId: string;
   onSelectAgent: (id: string) => void;
   onAddAgent: () => void;
+  onCloseAgent: (id: string) => void;
   activeView: AppView;
   onNavigate: (view: AppView) => void;
 }
 
-export default function TitleBar({ agents, activeAgentId, onSelectAgent, onAddAgent, activeView, onNavigate }: TitleBarProps) {
+export default function TitleBar({ agents, activeAgentId, onSelectAgent, onAddAgent, onCloseAgent, activeView, onNavigate }: TitleBarProps) {
   const [orgStatus, setOrgStatus] = useState<OrgStatus | null>(null);
 
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function TitleBar({ agents, activeAgentId, onSelectAgent, onAddAg
           activeAgentId={activeAgentId}
           onSelectAgent={(id) => { onSelectAgent(id); onNavigate('dashboard'); }}
           onAddAgent={onAddAgent}
+          onCloseAgent={onCloseAgent}
         />
       </div>
       {orgStatus && orgStatus.total > 0 && (
@@ -79,7 +81,13 @@ export default function TitleBar({ agents, activeAgentId, onSelectAgent, onAddAg
         >
           Analytics
         </button>
-        <button title="Settings">Settings</button>
+        <button
+          title="Settings"
+          className={activeView === 'settings' ? 'active' : ''}
+          onClick={() => onNavigate(activeView === 'settings' ? 'dashboard' : 'settings')}
+        >
+          Settings
+        </button>
       </div>
     </div>
   );

@@ -19,7 +19,7 @@ export function buildAgentSystemPrompt(config: {
 
 ## Rules
 - ALWAYS use the provided tools. Do not output raw code — write it to files.
-- Use shell_exec for git and Salesforce CLI operations
+- Use Bash for git and Salesforce CLI operations
 - Follow existing code patterns and conventions you observe
 - Write Apex with \`with sharing\` by default
 - Use @AuraEnabled(cacheable=true) for read operations

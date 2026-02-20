@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { ChatMessage, AgentStatus } from '../../shared/types';
+import type { ChatMessage, AgentStatus, Ticket } from '../../shared/types';
 
 interface ChatPaneProps {
   agentId: string | null;
@@ -18,7 +18,6 @@ function relativeTime(timestamp: string): string {
 }
 
 function renderContent(text: string): React.ReactNode {
-  // Lightweight markdown: bold, inline code, code blocks, newlines
   const parts: React.ReactNode[] = [];
   const lines = text.split('\n');
 
@@ -46,7 +45,6 @@ function renderContent(text: string): React.ReactNode {
       return;
     }
 
-    // Process inline formatting
     const formatted = line
       .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
       .replace(/`(.+?)`/g, '<code class="chat-inline-code">$1</code>');
@@ -60,7 +58,6 @@ function renderContent(text: string): React.ReactNode {
     );
   });
 
-  // Handle unclosed code blocks
   if (inCodeBlock && codeBlockLines.length > 0) {
     parts.push(
       <pre key="cb-end" className="chat-code-block">
@@ -70,6 +67,109 @@ function renderContent(text: string): React.ReactNode {
   }
 
   return parts;
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+}
+
+function TicketPicker({ agentId, onAssigned }: { agentId: string; onAssigned: () => void }) {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<string>('');
+  const [assigning, setAssigning] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    window.sweatshop.tickets.list().then((all) => {
+      const available = all.filter(
+        (t) => t.status === 'backlog' || t.status === 'ready'
+      );
+      setTickets(available);
+    });
+  }, []);
+
+  const handleAssign = async () => {
+    if (!selectedTicket) return;
+    setAssigning(true);
+    setError('');
+
+    try {
+      const ticket = tickets.find((t) => t.id === selectedTicket);
+      if (!ticket) return;
+
+      const branchName = `agent/${slugify(ticket.title)}`;
+      const prompt = [
+        `# ${ticket.title}`,
+        '',
+        ticket.description,
+        '',
+        ticket.acceptanceCriteria ? `## Acceptance Criteria\n${ticket.acceptanceCriteria}` : '',
+      ].filter(Boolean).join('\n');
+
+      const settings = await window.sweatshop.settings.get();
+      const workingDirectory = settings.git?.workingDirectory || '';
+
+      await window.sweatshop.agents.assign(agentId, selectedTicket, {
+        orgAlias: '',
+        branchName,
+        refinedPrompt: prompt,
+        workingDirectory,
+      });
+
+      onAssigned();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assign ticket');
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  return (
+    <div className="ticket-picker">
+      <div className="ticket-picker-title">Assign a ticket to start working</div>
+      {tickets.length === 0 ? (
+        <div className="ticket-picker-empty">
+          No tickets available. Create one in Stories first.
+        </div>
+      ) : (
+        <>
+          <div className="ticket-picker-list">
+            {tickets.map((t) => (
+              <button
+                key={t.id}
+                className={`ticket-picker-item ${selectedTicket === t.id ? 'selected' : ''}`}
+                onClick={() => setSelectedTicket(t.id)}
+              >
+                <span className={`story-status-dot`} style={{
+                  background: t.priority === 'critical' ? 'var(--error)' :
+                    t.priority === 'high' ? 'var(--warning)' :
+                    t.priority === 'medium' ? 'var(--accent)' : 'var(--text-muted)',
+                }} />
+                <div className="ticket-picker-info">
+                  <div className="ticket-picker-name">{t.title}</div>
+                  <div className="ticket-picker-meta">
+                    {t.priority} · {t.labels.length > 0 ? t.labels.join(', ') : 'no labels'}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+          {error && <div className="story-form-error">{error}</div>}
+          <button
+            className="btn-primary ticket-picker-assign"
+            onClick={handleAssign}
+            disabled={!selectedTicket || assigning}
+          >
+            {assigning ? 'Assigning...' : 'Start Work'}
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function ChatPane({ agentId }: ChatPaneProps) {
@@ -94,7 +194,6 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
 
     let cancelled = false;
 
-    // Load history + current status
     Promise.all([
       window.sweatshop.chat.history(agentId),
       window.sweatshop.agents.get(agentId),
@@ -128,9 +227,6 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
 
     window.sweatshop.chat.onMessage(handleNewMessage);
     window.sweatshop.agents.onStatusChanged(handleStatusChanged);
-
-    // Note: cleanup requires removeListener support in preload.
-    // For now listeners accumulate — Prompt 12 (lifecycle) will add cleanup.
   }, [agentId, isAtBottom]);
 
   // Auto-scroll to bottom on new messages
@@ -147,7 +243,6 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
     }
   }, [agentStatus]);
 
-  // Scroll handler to detect if user scrolled up
   const handleScroll = useCallback(() => {
     if (!messagesRef.current) return;
     const el = messagesRef.current;
@@ -164,7 +259,6 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
     setHasNewMessages(false);
   }, []);
 
-  // Send message
   const handleSend = useCallback(async () => {
     if (!agentId || !input.trim()) return;
     const text = input.trim();
@@ -182,9 +276,12 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
     [handleSend]
   );
 
-  // Action handlers
   const handleApprove = useCallback(async () => {
     if (!agentId) return;
+    const confirmed = window.confirm(
+      'This will merge the agent\'s work into the base branch. Are you sure?'
+    );
+    if (!confirmed) return;
     await window.sweatshop.agents.approve(agentId);
   }, [agentId]);
 
@@ -215,11 +312,16 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
     <div className="chat-pane">
       {/* Messages area */}
       <div className="chat-messages" ref={messagesRef} onScroll={handleScroll}>
-        {messages.length === 0 && (
+        {agentId && agentStatus === 'IDLE' && messages.length === 0 ? (
+          <TicketPicker
+            agentId={agentId}
+            onAssigned={() => {/* status change will update via IPC */}}
+          />
+        ) : messages.length === 0 ? (
           <div className="chat-empty">
             {agentId ? 'No messages yet' : 'Select an agent to start chatting'}
           </div>
-        )}
+        ) : null}
         {messages.map((msg) => (
           <div key={msg.id} className={`chat-message ${msg.role}`}>
             {msg.role !== 'system' && (
@@ -243,12 +345,26 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
             )}
           </div>
         ))}
+        {(agentStatus === 'DEVELOPING' || agentStatus === 'REWORK' || agentStatus === 'BRANCHING' || agentStatus === 'MERGING' || agentStatus === 'ASSIGNED') && (
+          <div className="chat-thinking">
+            <span className="chat-thinking-dots">
+              <span /><span /><span />
+            </span>
+            <span className="chat-thinking-label">
+              {agentStatus === 'BRANCHING' ? 'Creating branch...' :
+               agentStatus === 'ASSIGNED' ? 'Setting up...' :
+               agentStatus === 'MERGING' ? 'Merging...' :
+               agentStatus === 'REWORK' ? 'Reworking...' :
+               'Agent is working...'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* New messages pill */}
       {hasNewMessages && (
         <button className="chat-new-messages-pill" onClick={scrollToBottom}>
-          New messages ↓
+          New messages
         </button>
       )}
 
@@ -300,6 +416,23 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
             <button className="btn-primary" onClick={() => agentId && window.sweatshop.chat.send(agentId, 'Please retry the last action.')}>
               Retry
             </button>
+            <button className="reject-btn" onClick={handleStop}>Stop Agent</button>
+          </div>
+        </div>
+      )}
+
+      {/* Stop button for working agents */}
+      {(agentStatus === 'DEVELOPING' || agentStatus === 'REWORK' || agentStatus === 'BRANCHING' || agentStatus === 'MERGING' || agentStatus === 'ASSIGNED') && (
+        <div className="chat-action-bar working-state">
+          <div className="chat-action-label">
+            <span className="working-indicator" />
+            {agentStatus === 'BRANCHING' ? 'Creating branch...' :
+             agentStatus === 'ASSIGNED' ? 'Setting up agent...' :
+             agentStatus === 'MERGING' ? 'Merging to base branch...' :
+             agentStatus === 'REWORK' ? 'Agent is reworking...' :
+             'Agent is developing...'}
+          </div>
+          <div className="chat-action-buttons">
             <button className="reject-btn" onClick={handleStop}>Stop Agent</button>
           </div>
         </div>

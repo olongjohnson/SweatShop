@@ -6,9 +6,10 @@ import BrowserPane from './components/BrowserPane';
 import NotificationSystem from './components/NotificationSystem';
 import StoriesView from './views/StoriesView';
 import AnalyticsView from './views/AnalyticsView';
+import SettingsView from './views/SettingsView';
 import type { AgentStatus, OrchestratorStatus } from '../shared/types';
 
-type AppView = 'dashboard' | 'stories' | 'analytics';
+type AppView = 'dashboard' | 'stories' | 'analytics' | 'settings';
 
 interface AgentTab {
   id: string;
@@ -102,7 +103,12 @@ export default function App() {
         e.preventDefault();
         const current = agents.find((a) => a.id === activeAgentId);
         if (current?.status === 'QA_READY') {
-          window.sweatshop.agents.approve(activeAgentId);
+          const confirmed = window.confirm(
+            'This will merge the agent\'s work into the base branch. Are you sure?'
+          );
+          if (confirmed) {
+            window.sweatshop.agents.approve(activeAgentId);
+          }
         }
         return;
       }
@@ -119,6 +125,17 @@ export default function App() {
     setActiveAgentId(agent.id);
     setView('dashboard');
   }, [agents.length]);
+
+  const handleCloseAgent = useCallback(async (id: string) => {
+    await window.sweatshop.agents.delete(id);
+    setAgents((prev) => {
+      const remaining = prev.filter((a) => a.id !== id);
+      if (activeAgentId === id) {
+        setActiveAgentId(remaining.length > 0 ? remaining[0].id : '');
+      }
+      return remaining;
+    });
+  }, [activeAgentId]);
 
   const handleSidebarResize = useCallback((delta: number) => {
     setSidebarWidth((prev) => {
@@ -147,6 +164,12 @@ export default function App() {
             <AnalyticsView />
           </div>
         );
+      case 'settings':
+        return (
+          <div className="app-body">
+            <SettingsView />
+          </div>
+        );
       default:
         return (
           <div className="app-body" ref={bodyRef}>
@@ -167,6 +190,7 @@ export default function App() {
         activeAgentId={activeAgentId}
         onSelectAgent={handleSelectAgent}
         onAddAgent={handleAddAgent}
+        onCloseAgent={handleCloseAgent}
         activeView={view}
         onNavigate={setView}
       />

@@ -1,4 +1,6 @@
 import { BrowserWindow } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 import { AgentInstance } from './agent-instance';
 import { GitService } from './git-service';
 import * as dbService from './database';
@@ -7,9 +9,21 @@ import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { assertTransition, isInterruptState } from './agent-state-machine';
 import type { Agent, AgentStatus } from '../../shared/types';
 
+const LOG_FILE = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'sweatshop-agent.log');
+function debugLog(msg: string): void {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  fs.appendFileSync(LOG_FILE, line);
+}
+
 class AgentManager {
   private agents = new Map<string, AgentInstance>();
   private worktreePaths = new Map<string, string>();
+
+  /** Write a chat message to DB AND broadcast it to the renderer */
+  private chatSend(agentId: string, content: string, role: 'system' | 'user' | 'agent' = 'system'): void {
+    const msg = dbService.chatSend(agentId, content, role);
+    this.broadcast(IPC_CHANNELS.CHAT_ON_MESSAGE, msg);
+  }
 
   async createAgent(name: string): Promise<Agent> {
     const agent = dbService.createAgent({
@@ -46,11 +60,11 @@ class AgentManager {
       workingDirectory: string;
     }
   ): Promise<void> {
+    debugLog(`[AgentManager] assignTicket called: agentId=${agentId}, ticketId=${ticketId}`);
+    debugLog(`[AgentManager] config: branch=${config.branchName}, org=${config.orgAlias}, workDir=${config.workingDirectory}`);
+    debugLog(`[AgentManager] prompt length: ${config.refinedPrompt?.length || 0}`);
+
     const settings = getSettings();
-    const apiKey = settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error('Anthropic API key not configured. Set it in Settings.');
-    }
 
     const agentRecord = dbService.getAgent(agentId);
     if (!agentRecord) throw new Error(`Agent ${agentId} not found`);
@@ -66,42 +80,54 @@ class AgentManager {
 
     // ASSIGNED → BRANCHING
     this.transitionAgent(agentId, 'BRANCHING');
-    dbService.chatSend(agentId, `Creating branch ${config.branchName}...`, 'system');
+    this.chatSend(agentId, `Creating branch ${config.branchName}...`);
 
     const projectDir = config.workingDirectory || settings.git?.workingDirectory || process.cwd();
     let agentWorkDir = projectDir;
+    debugLog(`[AgentManager] projectDir=${projectDir}`);
     const gitService = new GitService(projectDir);
     const { valid } = await gitService.validate();
+    debugLog(`[AgentManager] git valid=${valid}`);
 
     if (valid) {
       try {
         agentWorkDir = await gitService.createWorktree(agentId, config.branchName);
         this.worktreePaths.set(agentId, agentWorkDir);
-      } catch (err) {
-        console.warn(`[AgentManager] Worktree creation failed, using project dir:`, err);
+        this.chatSend(agentId, `Branch created. Working in: ${agentWorkDir}`);
+        debugLog(`[AgentManager] Worktree created at: ${agentWorkDir}`);
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        debugLog(`[AgentManager] Worktree creation failed: ${errMsg}`);
+        this.chatSend(agentId, `Worktree failed: ${errMsg}. Using project dir instead.`);
       }
+    } else {
+      this.chatSend(agentId, `Not a valid git repo. Working in: ${projectDir}`);
     }
 
     // BRANCHING → DEVELOPING
     this.transitionAgent(agentId, 'DEVELOPING');
+    debugLog(`[AgentManager] Transitioned to DEVELOPING, creating AgentInstance`);
 
-    const instance = new AgentInstance(agentId, agentRecord.name, apiKey);
+    const instance = new AgentInstance(agentId, agentRecord.name);
     this.agents.set(agentId, instance);
     this.wireEvents(instance);
 
+    debugLog(`[AgentManager] Calling instance.start()`);
     instance.start({
       ticketId,
       orgAlias: config.orgAlias,
       branchName: config.branchName,
       prompt: config.refinedPrompt,
       workingDirectory: agentWorkDir,
+    }).catch((err: unknown) => {
+      debugLog(`[AgentManager] instance.start() rejected: ${err}`);
     });
   }
 
   async sendMessage(agentId: string, message: string): Promise<void> {
     const instance = this.agents.get(agentId);
     if (!instance) {
-      dbService.chatSend(agentId, message, 'user');
+      this.chatSend(agentId, message, 'user');
       return;
     }
     await instance.handleHumanMessage(message);
@@ -113,7 +139,7 @@ class AgentManager {
 
     // QA_READY → MERGING
     this.transitionAgent(agentId, 'MERGING');
-    dbService.chatSend(agentId, 'Merging to base branch...', 'system');
+    this.chatSend(agentId, 'Merging to base branch...');
 
     const settings = getSettings();
     const projectDir = settings.git?.workingDirectory || process.cwd();
@@ -134,11 +160,7 @@ class AgentManager {
           this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
             agentId, agentName: agent.name, status: 'ERROR' as AgentStatus,
           });
-          dbService.chatSend(
-            agentId,
-            `Merge conflict detected in: ${result.conflictFiles?.join(', ') || 'unknown files'}`,
-            'system'
-          );
+          this.chatSend(agentId, `Merge conflict detected in: ${result.conflictFiles?.join(', ') || 'unknown files'}`);
           return;
         }
 
@@ -169,7 +191,7 @@ class AgentManager {
       dbService.updateTicket(agent.assignedTicketId, { status: 'merged' });
     }
 
-    dbService.chatSend(agentId, 'Work complete! Branch merged.', 'system');
+    this.chatSend(agentId, 'Work complete! Branch merged.');
 
     // Notify ticket merged
     this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
@@ -193,7 +215,7 @@ class AgentManager {
 
     // QA_READY → REWORK
     this.transitionAgent(agentId, 'REWORK');
-    dbService.chatSend(agentId, `Rework requested: ${feedback}`, 'system');
+    this.chatSend(agentId, `Rework requested: ${feedback}`);
 
     if (agent.assignedTicketId) {
       dbService.updateTicket(agent.assignedTicketId, { status: 'in_progress' });

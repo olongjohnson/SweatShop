@@ -67,6 +67,11 @@ export function initSettings(userDataPath: string): void {
     settings = { ...DEFAULTS };
     saveSettings();
   }
+
+  // Propagate stored API key to env var for the Claude Agent SDK
+  if (settings.anthropicApiKey && !process.env.ANTHROPIC_API_KEY) {
+    process.env.ANTHROPIC_API_KEY = settings.anthropicApiKey;
+  }
 }
 
 function saveSettings(): void {

@@ -75,6 +75,7 @@ export class GitService {
    */
   async createWorktree(agentId: string, branchName: string): Promise<string> {
     const worktreePath = path.join(this.workingDir, '.worktrees', agentId);
+    const baseBranch = this.getBaseBranch();
 
     // Clean up stale worktree if exists
     if (fs.existsSync(worktreePath)) {
@@ -83,10 +84,16 @@ export class GitService {
       } catch { /* ignore */ }
     }
 
+    // Delete stale branch if it already exists (from a previous failed attempt)
+    try {
+      await git(['branch', '-D', branchName], this.workingDir);
+    } catch { /* branch didn't exist, that's fine */ }
+
     // Ensure .worktrees directory exists
     fs.mkdirSync(path.join(this.workingDir, '.worktrees'), { recursive: true });
 
-    await git(['worktree', 'add', worktreePath, branchName], this.workingDir);
+    // Use -b to create the new branch off the base branch
+    await git(['worktree', 'add', '-b', branchName, worktreePath, baseBranch], this.workingDir);
     return worktreePath;
   }
 

@@ -263,6 +263,11 @@ export function createAgent(data: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>)
   return getAgent(id)!;
 }
 
+export function deleteAgent(id: string): void {
+  db.prepare('DELETE FROM chat_messages WHERE agent_id = ?').run(id);
+  db.prepare('DELETE FROM agents WHERE id = ?').run(id);
+}
+
 export function updateAgent(id: string, data: Partial<Agent>): Agent {
   const existing = getAgent(id);
   if (!existing) throw new Error(`Agent ${id} not found`);

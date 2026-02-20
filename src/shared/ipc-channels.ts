@@ -15,6 +15,7 @@ export const IPC_CHANNELS = {
   AGENT_APPROVE: 'agent:approve',
   AGENT_REJECT: 'agent:reject',
   AGENT_STOP: 'agent:stop',
+  AGENT_DELETE: 'agent:delete',
 
   // Scratch Orgs
   ORG_LIST: 'org:list',
@@ -45,6 +46,9 @@ export const IPC_CHANNELS = {
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_UPDATE: 'settings:update',
+
+  // Claude Code
+  CLAUDE_AUTH_STATUS: 'claude:auth-status',
 
   // Orchestrator
   ORCHESTRATOR_LOAD: 'orchestrator:load',

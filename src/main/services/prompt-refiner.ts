@@ -1,7 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { getSettings } from './settings';
+import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk';
 import * as dbService from './database';
 import type { Ticket } from '../../shared/types';
+
+// Prevent tsc from compiling dynamic import() into require()
+// eslint-disable-next-line @typescript-eslint/no-implied-eval
+const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
 
 const REFINER_SYSTEM_PROMPT = `You are a prompt engineer specializing in Salesforce development tasks.
 Given a ticket (title, description, acceptance criteria), produce a detailed
@@ -24,13 +27,7 @@ export async function refineTicket(
     relatedFiles?: string[];
   }
 ): Promise<string> {
-  const settings = getSettings();
-  const apiKey = settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('Anthropic API key not configured. Set it in Settings.');
-  }
-
-  const client = new Anthropic({ apiKey });
+  const { query } = await dynamicImport('@anthropic-ai/claude-agent-sdk');
 
   let userMessage = `## Ticket\n\n`;
   userMessage += `**Title:** ${ticket.title}\n\n`;
@@ -51,18 +48,22 @@ export async function refineTicket(
 
   userMessage += `Produce a detailed, step-by-step development prompt for an AI agent to implement this ticket.`;
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
-    system: REFINER_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userMessage }],
-  });
+  let refinedPrompt = '';
 
-  const refinedPrompt =
-    response.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { type: 'text'; text: string }).text)
-      .join('\n') || '';
+  for await (const message of query({
+    prompt: userMessage,
+    options: {
+      systemPrompt: REFINER_SYSTEM_PROMPT,
+      tools: [],
+      maxTurns: 1,
+      settingSources: [],
+      persistSession: false,
+    },
+  })) {
+    if (message.type === 'result' && message.subtype === 'success') {
+      refinedPrompt = (message as SDKResultSuccess).result;
+    }
+  }
 
   // Store in refined_prompts table
   dbService.createRefinedPrompt({

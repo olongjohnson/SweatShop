@@ -66,6 +66,11 @@ export function registerIpcHandlers(): void {
     return agentManager.stopAgent(agentId);
   });
 
+  ipcMain.handle(IPC_CHANNELS.AGENT_DELETE, async (_, agentId: string) => {
+    await agentManager.stopAgent(agentId);
+    dbService.deleteAgent(agentId);
+  });
+
   // Scratch Orgs
   ipcMain.handle(IPC_CHANNELS.ORG_LIST, () => {
     return dbService.listOrgs();
@@ -228,6 +233,36 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.BROWSER_HIDE_ALL, () => {
     browserManager.hideAll();
+  });
+
+  // Claude Code auth status
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_AUTH_STATUS, async () => {
+    const os = await import('os');
+    const pathMod = await import('path');
+    const fs = await import('fs');
+
+    // Check for ANTHROPIC_API_KEY env var
+    if (process.env.ANTHROPIC_API_KEY) {
+      return { authenticated: true, method: 'API Key (env var)' };
+    }
+
+    // Check for Claude Code OAuth credentials
+    const credPath = pathMod.join(os.homedir(), '.claude', '.credentials.json');
+    try {
+      const raw = fs.readFileSync(credPath, 'utf-8');
+      const creds = JSON.parse(raw);
+      if (creds.claudeAiOauth) {
+        return { authenticated: true, method: 'Claude Code OAuth' };
+      }
+    } catch {
+      // No credentials file
+    }
+
+    return {
+      authenticated: false,
+      method: 'none',
+      error: 'Not authenticated. Run "claude login" in your terminal.',
+    };
   });
 
   // Settings

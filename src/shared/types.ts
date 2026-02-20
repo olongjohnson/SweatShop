@@ -205,6 +205,7 @@ export interface SweatShopAPI {
     approve: (agentId: string) => Promise<void>;
     reject: (agentId: string, feedback: string) => Promise<void>;
     stop: (agentId: string) => Promise<void>;
+    delete: (agentId: string) => Promise<void>;
     onStatusChanged: (callback: (data: { agentId: string; status: AgentStatus }) => void) => void;
     onTerminalData: (callback: (data: { agentId: string; data: string }) => void) => void;
     onNotification: (callback: (data: AgentNotification) => void) => void;
@@ -260,6 +261,9 @@ export interface SweatShopAPI {
   deathmark: {
     testConnection: () => Promise<{ success: boolean; error?: string }>;
     sync: () => Promise<Ticket[]>;
+  };
+  claude: {
+    authStatus: () => Promise<{ authenticated: boolean; method: string; error?: string }>;
   };
   settings: {
     get: () => Promise<SweatShopSettings>;

@@ -6,6 +6,9 @@ import { initSettings } from './services/settings';
 import { registerIpcHandlers } from './ipc-handlers';
 import { browserManager } from './services/browser-manager';
 
+// Allow SDK to spawn claude CLI (blocks nested sessions if CLAUDECODE is set)
+delete process.env.CLAUDECODE;
+
 // Avoid GPU cache permission errors (VS Code terminal inherits restrictive paths)
 app.setPath('userData', path.join(os.homedir(), '.sweatshop'));
 
@@ -20,6 +23,7 @@ function createWindow(): BrowserWindow {
     icon: path.join(__dirname, '../../assets/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      sandbox: false,
     },
   });
 

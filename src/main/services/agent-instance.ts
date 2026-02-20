@@ -1,39 +1,84 @@
 import { EventEmitter } from 'events';
-import Anthropic from '@anthropic-ai/sdk';
+import * as fs from 'fs';
+import * as path from 'path';
+import type {
+  Query,
+  SDKResultSuccess,
+  SDKResultError,
+  HookCallbackMatcher,
+  HookInput,
+  HookJSONOutput,
+} from '@anthropic-ai/claude-agent-sdk';
 import type { AgentStatus, ChatMessage } from '../../shared/types';
-import { getToolDefinitions, executeTool } from './agent-tools';
-import type { ToolConfig, ToolCallbacks } from './agent-tools';
 import { buildAgentSystemPrompt } from '../prompts/agent-system';
 import * as dbService from './database';
 import { analytics } from './analytics';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'crypto';
 
-interface ConversationMessage {
-  role: 'user' | 'assistant';
-  content: string | Anthropic.ContentBlockParam[];
+// Debug file logger
+const LOG_FILE = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'sweatshop-agent.log');
+function debugLog(msg: string): void {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  fs.appendFileSync(LOG_FILE, line);
+  console.log(msg);
 }
+
+// Lazy-loaded ESM modules — use Function trick to prevent tsc from
+// compiling dynamic import() into require() (which breaks ESM-only packages)
+// eslint-disable-next-line @typescript-eslint/no-implied-eval
+const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
+
+let _sdk: any = null;
+async function getSDK(): Promise<typeof import('@anthropic-ai/claude-agent-sdk')> {
+  if (!_sdk) {
+    _sdk = await dynamicImport('@anthropic-ai/claude-agent-sdk');
+  }
+  return _sdk;
+}
+
+let _zod: any = null;
+async function getZod(): Promise<typeof import('zod/v4')> {
+  if (!_zod) {
+    _zod = await dynamicImport('zod/v4');
+  }
+  return _zod;
+}
+
+// Blocked shell patterns (ported from agent-guardrails.ts)
+const BLOCKED_PATTERNS = [
+  { pattern: /rm\s+-rf\s+\//, reason: 'Recursive delete of root is blocked' },
+  { pattern: /git\s+push/, reason: 'Agents cannot push — merging is handled by the controller' },
+  { pattern: /git\s+merge/, reason: 'Agents cannot merge — merging is handled by the controller' },
+  { pattern: /git\s+checkout\s+(main|master)\b/, reason: 'Agents cannot checkout main/master' },
+  { pattern: /git\s+switch\s+(main|master)\b/, reason: 'Agents cannot switch to main/master' },
+  { pattern: /git\s+rebase/, reason: 'Agents cannot rebase' },
+  { pattern: /git\s+reset\s+--hard/, reason: 'Hard reset is blocked' },
+  { pattern: /sf\s+org\s+delete/, reason: 'Agents cannot delete orgs' },
+  { pattern: /sf\s+org\s+create/, reason: 'Agents cannot create orgs — the controller does this' },
+  { pattern: /format\s+[a-zA-Z]:/, reason: 'Disk formatting is blocked' },
+  { pattern: /shutdown\s/, reason: 'System shutdown is blocked' },
+  { pattern: /reboot\b/, reason: 'System reboot is blocked' },
+  { pattern: /mkfs\./, reason: 'Filesystem creation is blocked' },
+  { pattern: /dd\s+if=/, reason: 'Raw disk writes are blocked' },
+];
 
 export class AgentInstance extends EventEmitter {
   readonly id: string;
   readonly name: string;
   private _status: AgentStatus = 'IDLE';
-  private conversationHistory: ConversationMessage[] = [];
-  private assignedOrg: string | null = null;
-  private assignedBranch: string | null = null;
-  private ticketId: string | null = null;
   private runId: string | null = null;
-  private anthropic: Anthropic;
+  private sessionId: string | null = null;
+  private abortController: AbortController | null = null;
   private stopped = false;
   private humanResponseResolve: ((value: string) => void) | null = null;
   private interventionStartTime: number | null = null;
 
   get status(): AgentStatus { return this._status; }
 
-  constructor(id: string, name: string, apiKey: string) {
+  constructor(id: string, name: string) {
     super();
     this.id = id;
     this.name = name;
-    this.anthropic = new Anthropic({ apiKey });
   }
 
   private setStatus(newStatus: AgentStatus): void {
@@ -54,12 +99,13 @@ export class AgentInstance extends EventEmitter {
     prompt: string;
     workingDirectory: string;
   }): Promise<void> {
-    this.ticketId = config.ticketId;
-    this.assignedOrg = config.orgAlias;
-    this.assignedBranch = config.branchName;
+    debugLog(`[AgentInstance ${this.id}] start() called`);
+    debugLog(`[AgentInstance ${this.id}] CLAUDECODE env = ${process.env.CLAUDECODE || 'NOT SET'}`);
+    debugLog(`[AgentInstance ${this.id}] ANTHROPIC_API_KEY set = ${!!process.env.ANTHROPIC_API_KEY}`);
+    this.stopped = false;
 
     // Create a ticket run in DB
-    this.runId = uuid();
+    this.runId = randomUUID();
     dbService.createRun({
       id: this.runId,
       ticketId: config.ticketId,
@@ -77,21 +123,71 @@ export class AgentInstance extends EventEmitter {
       projectType: 'salesforce',
     });
 
-    this.conversationHistory = [
-      { role: 'user', content: config.prompt },
-    ];
+    this.abortController = new AbortController();
+
+    // Dynamic import of ESM SDK
+    debugLog(`[AgentInstance ${this.id}] Loading SDK...`);
+    const { query } = await getSDK();
+    debugLog(`[AgentInstance ${this.id}] SDK loaded`);
+
+    // Create custom MCP server with app-specific tools
+    const mcpServer = await this.createMcpServer();
+    debugLog(`[AgentInstance ${this.id}] MCP server created`);
 
     try {
-      await this.runAgentLoop(systemPrompt, {
-        agentId: this.id,
-        orgAlias: config.orgAlias,
-        branchName: config.branchName,
-        workingDirectory: config.workingDirectory,
+      debugLog(`[AgentInstance ${this.id}] Starting query() with cwd=${config.workingDirectory}`);
+      debugLog(`[AgentInstance ${this.id}] Prompt: ${config.prompt.slice(0, 200)}...`);
+      const q = query({
+        prompt: config.prompt,
+        options: {
+          systemPrompt,
+          cwd: config.workingDirectory,
+          abortController: this.abortController,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+          allowedTools: [
+            'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
+            'mcp__sweatshop__request_human_input',
+            'mcp__sweatshop__report_development_complete',
+          ],
+          mcpServers: {
+            sweatshop: mcpServer,
+          },
+          hooks: {
+            PreToolUse: [
+              this.createBashGuardHook(config.orgAlias),
+            ],
+            PostToolUse: [
+              this.createTerminalOutputHook(),
+            ],
+          },
+          settingSources: [],
+          persistSession: false,
+        },
       });
+
+      debugLog(`[AgentInstance ${this.id}] query() returned, iterating message stream...`);
+      await this.processMessageStream(q);
+      debugLog(`[AgentInstance ${this.id}] Message stream completed, status=${this._status}`);
+
+      // If agent finished without calling report_development_complete, auto-transition to QA_READY
+      if (this._status === 'DEVELOPING' || this._status === 'REWORK') {
+        debugLog(`[AgentInstance ${this.id}] Agent completed without reporting — auto-transitioning to QA_READY`);
+        this.setStatus('QA_READY');
+        this.emitChat('system', 'Agent finished working. Ready for review.');
+        if (this.runId) {
+          dbService.updateRun(this.runId, { status: 'completed', completedAt: new Date().toISOString() });
+        }
+        this.emit('work-complete');
+      }
     } catch (err: unknown) {
+      if (this.stopped) return; // Expected abort
+      debugLog(`[AgentInstance ${this.id}] Error: ${err}`);
       const msg = err instanceof Error ? err.message : 'Unknown error';
+      const stack = err instanceof Error ? err.stack : '';
       this.setStatus('ERROR');
       this.emitChat('system', `Agent error: ${msg}`);
+      if (stack) debugLog(`[AgentInstance ${this.id}] Stack: ${stack}`);
       if (this.runId) {
         dbService.updateRun(this.runId, { status: 'failed', completedAt: new Date().toISOString() });
       }
@@ -129,6 +225,9 @@ export class AgentInstance extends EventEmitter {
 
   stop(): void {
     this.stopped = true;
+    if (this.abortController) {
+      this.abortController.abort();
+    }
     if (this.runId) {
       dbService.updateRun(this.runId, { status: 'cancelled', completedAt: new Date().toISOString() });
     }
@@ -139,117 +238,168 @@ export class AgentInstance extends EventEmitter {
     }
   }
 
-  private async runAgentLoop(
-    systemPrompt: string,
-    toolConfig: ToolConfig
-  ): Promise<void> {
-    const tools = getToolDefinitions();
+  private async createMcpServer() {
+    const { createSdkMcpServer, tool } = await getSDK();
+    const { z } = await getZod();
 
-    const toolCallbacks: ToolCallbacks = {
-      onTerminalData: (data: string) => {
-        this.emit('terminal-data', data);
-      },
-      onNeedsInput: async (question: string) => {
-        this.setStatus('NEEDS_INPUT');
-        this.emitChat('agent', question);
-        this.emit('needs-input', question);
-        this.interventionStartTime = Date.now();
+    return createSdkMcpServer({
+      name: 'sweatshop',
+      version: '1.0.0',
+      tools: [
+        tool(
+          'request_human_input',
+          'Ask the human a question. Use this when you need clarification, a decision, or approval. The agent will pause until the human responds.',
+          { question: z.string().describe('The question to ask the human') },
+          async (args) => {
+            this.setStatus('NEEDS_INPUT');
+            this.emitChat('agent', args.question);
+            this.emit('needs-input', args.question);
+            this.interventionStartTime = Date.now();
 
-        return new Promise<string>((resolve) => {
-          this.humanResponseResolve = resolve;
-        });
-      },
-      onWorkComplete: () => {
-        this.setStatus('QA_READY');
-        this.emitChat('system', 'Development complete. Ready for QA review.');
-        if (this.runId) {
-          dbService.updateRun(this.runId, { status: 'completed', completedAt: new Date().toISOString() });
-        }
-        this.emit('work-complete');
-      },
-    };
-
-    while (!this.stopped) {
-      const response = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 8192,
-        system: systemPrompt,
-        tools: tools as Anthropic.Tool[],
-        messages: this.conversationHistory as Anthropic.MessageParam[],
-      });
-
-      // Record token usage
-      if (this.runId) {
-        analytics.recordTokenUsage(
-          this.runId,
-          response.usage.input_tokens,
-          response.usage.output_tokens
-        );
-      }
-
-      const assistantContent: Anthropic.ContentBlockParam[] = [];
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const block of response.content) {
-        if (block.type === 'text') {
-          assistantContent.push({ type: 'text', text: block.text });
-          this.emitChat('agent', block.text);
-        } else if (block.type === 'tool_use') {
-          assistantContent.push({
-            type: 'tool_use',
-            id: block.id,
-            name: block.name,
-            input: block.input as Record<string, string>,
-          });
-
-          const result = await executeTool(
-            block.name,
-            block.input as Record<string, string>,
-            toolConfig,
-            toolCallbacks
-          );
-
-          if (block.name === 'report_development_complete' || this.stopped) {
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: result.output,
+            const response = await new Promise<string>((resolve) => {
+              this.humanResponseResolve = resolve;
             });
-            break;
-          }
 
-          if (block.name === 'request_human_input') {
             this.setStatus('DEVELOPING');
+            return {
+              content: [{ type: 'text' as const, text: `Human response: ${response}` }],
+            };
+          }
+        ),
+        tool(
+          'report_development_complete',
+          'Signal that development is complete and the code is ready for deployment and QA. Call this when all implementation and local commits are done.',
+          { summary: z.string().describe('Brief summary of what was implemented') },
+          async (args) => {
+            this.setStatus('QA_READY');
+            this.emitChat('system', `Development complete: ${args.summary}`);
+            if (this.runId) {
+              dbService.updateRun(this.runId, { status: 'completed', completedAt: new Date().toISOString() });
+            }
+            this.emit('work-complete');
+            return {
+              content: [{ type: 'text' as const, text: `Development complete. Summary: ${args.summary}` }],
+            };
+          }
+        ),
+      ],
+    });
+  }
+
+  private createBashGuardHook(orgAlias: string): HookCallbackMatcher {
+    return {
+      matcher: 'Bash',
+      hooks: [
+        async (input: HookInput, _toolUseId: string | undefined, _options: { signal: AbortSignal }): Promise<HookJSONOutput> => {
+          const toolInput = (input as { tool_input?: unknown }).tool_input as { command?: string } | undefined;
+          const command = toolInput?.command || '';
+
+          // Check blocked patterns
+          for (const { pattern, reason } of BLOCKED_PATTERNS) {
+            if (pattern.test(command)) {
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse' as const,
+                  permissionDecision: 'deny' as const,
+                  permissionDecisionReason: `BLOCKED: ${reason}`,
+                },
+              };
+            }
           }
 
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: result.error
-              ? `Error: ${result.error}\n${result.output}`
-              : result.output,
-          });
+          // Auto-inject --target-org for sf commands
+          if (/^\s*sf\s/.test(command) && !/--target-org\b|-o\s/.test(command)) {
+            const orgCommands = /sf\s+(project\s+deploy|project\s+retrieve|apex\s+run|apex\s+test|data\s+|org\s+open|org\s+display)/;
+            if (orgCommands.test(command)) {
+              const modified = command.trimEnd() + ` --target-org ${orgAlias}`;
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse' as const,
+                  permissionDecision: 'allow' as const,
+                  updatedInput: { command: modified },
+                },
+              };
+            }
+          }
+
+          return { continue: true };
+        },
+      ],
+    };
+  }
+
+  private createTerminalOutputHook(): HookCallbackMatcher {
+    return {
+      matcher: 'Bash',
+      hooks: [
+        async (input: HookInput, _toolUseId: string | undefined, _options: { signal: AbortSignal }): Promise<HookJSONOutput> => {
+          const toolInput = (input as { tool_input?: unknown }).tool_input as { command?: string } | undefined;
+          const toolResponse = (input as { tool_response?: unknown }).tool_response as { stdout?: string; stderr?: string; output?: string } | undefined;
+
+          if (toolInput?.command) {
+            this.emit('terminal-data', `$ ${toolInput.command}\n`);
+          }
+          const output = toolResponse?.stdout || toolResponse?.output || '';
+          const stderr = toolResponse?.stderr || '';
+          if (output) this.emit('terminal-data', output);
+          if (stderr) this.emit('terminal-data', stderr);
+
+          return { continue: true };
+        },
+      ],
+    };
+  }
+
+  private async processMessageStream(q: Query): Promise<void> {
+    debugLog(`[AgentInstance ${this.id}] Entering message stream loop`);
+    for await (const message of q) {
+      debugLog(`[AgentInstance ${this.id}] Message: type=${message.type}, subtype=${'subtype' in message ? (message as { subtype?: string }).subtype : 'n/a'}`);
+      if (this.stopped) break;
+
+      switch (message.type) {
+        case 'system':
+          if ('subtype' in message && message.subtype === 'init') {
+            this.sessionId = message.session_id;
+            debugLog(`[AgentInstance ${this.id}] Session initialized: ${message.session_id}`);
+          }
+          break;
+
+        case 'assistant': {
+          // Extract text content from assistant messages
+          const content = message.message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && 'text' in block && block.text) {
+                this.emitChat('agent', block.text);
+              }
+            }
+          }
+          break;
         }
-      }
 
-      this.conversationHistory.push({
-        role: 'assistant',
-        content: assistantContent,
-      });
+        case 'result': {
+          const result = message as SDKResultSuccess | SDKResultError;
+          // Record token usage
+          if (this.runId && result.usage) {
+            analytics.recordTokenUsage(
+              this.runId,
+              result.usage.input_tokens ?? 0,
+              result.usage.output_tokens ?? 0,
+            );
+          }
 
-      if (toolResults.length > 0) {
-        this.conversationHistory.push({
-          role: 'user',
-          content: toolResults as unknown as Anthropic.ContentBlockParam[],
-        });
-      }
-
-      if (this._status === 'QA_READY' || this.stopped) {
-        break;
-      }
-
-      if (response.stop_reason === 'end_turn' && toolResults.length === 0) {
-        break;
+          if (result.subtype !== 'success') {
+            const errorResult = result as SDKResultError;
+            if (errorResult.errors?.length && !this.stopped) {
+              this.setStatus('ERROR');
+              this.emitChat('system', `Agent error: ${errorResult.errors.join(', ')}`);
+              if (this.runId) {
+                dbService.updateRun(this.runId, { status: 'failed', completedAt: new Date().toISOString() });
+              }
+            }
+          }
+          break;
+        }
       }
     }
   }
