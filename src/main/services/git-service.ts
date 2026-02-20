@@ -192,6 +192,45 @@ export class GitService {
     }
   }
 
+  async getFullDiff(branchName: string): Promise<string> {
+    const baseBranch = this.getBaseBranch();
+    try {
+      return await git(['diff', `${baseBranch}...${branchName}`], this.workingDir);
+    } catch {
+      return '';
+    }
+  }
+
+  async getFileDiff(branchName: string, filePath: string): Promise<string> {
+    const baseBranch = this.getBaseBranch();
+    try {
+      return await git(['diff', `${baseBranch}...${branchName}`, '--', filePath], this.workingDir);
+    } catch {
+      return '';
+    }
+  }
+
+  async getModifiedFilesWithStats(branchName: string): Promise<Array<{
+    path: string;
+    insertions: number;
+    deletions: number;
+  }>> {
+    const baseBranch = this.getBaseBranch();
+    try {
+      const output = await git(['diff', '--numstat', `${baseBranch}...${branchName}`], this.workingDir);
+      return output.split('\n').filter(Boolean).map((line) => {
+        const [ins, del, path] = line.split('\t');
+        return {
+          path,
+          insertions: ins === '-' ? 0 : parseInt(ins),
+          deletions: del === '-' ? 0 : parseInt(del),
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
   async deleteBranch(branchName: string): Promise<void> {
     await git(['branch', '-D', branchName], this.workingDir);
   }

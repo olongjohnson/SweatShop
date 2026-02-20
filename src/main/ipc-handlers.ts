@@ -100,6 +100,10 @@ export function registerIpcHandlers(): void {
     return orgPool.removeOrg(orgId);
   });
 
+  ipcMain.handle(IPC_CHANNELS.ORG_CREATE_SCRATCH, async (_, alias?: string) => {
+    return orgPool.createScratchOrg(alias);
+  });
+
   // Chat
   ipcMain.handle(IPC_CHANNELS.CHAT_HISTORY, (_, agentId: string) => {
     return dbService.chatHistory(agentId);
@@ -199,6 +203,33 @@ export function registerIpcHandlers(): void {
     const projectDir = settings.git?.workingDirectory || process.cwd();
     const gitService = new GitService(projectDir);
     return gitService.getDiffSummary(agent.branchName);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GIT_FULL_DIFF, async (_, agentId: string) => {
+    const agent = dbService.getAgent(agentId);
+    if (!agent?.branchName) return '';
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory || process.cwd();
+    const gitService = new GitService(projectDir);
+    return gitService.getFullDiff(agent.branchName);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GIT_FILE_DIFF, async (_, agentId: string, filePath: string) => {
+    const agent = dbService.getAgent(agentId);
+    if (!agent?.branchName) return '';
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory || process.cwd();
+    const gitService = new GitService(projectDir);
+    return gitService.getFileDiff(agent.branchName, filePath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GIT_FILES_WITH_STATS, async (_, agentId: string) => {
+    const agent = dbService.getAgent(agentId);
+    if (!agent?.branchName) return [];
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory || process.cwd();
+    const gitService = new GitService(projectDir);
+    return gitService.getModifiedFilesWithStats(agent.branchName);
   });
 
   // Browser

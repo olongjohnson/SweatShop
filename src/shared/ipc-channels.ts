@@ -25,6 +25,8 @@ export const IPC_CHANNELS = {
   ORG_DISCOVER: 'org:discover',
   ORG_REGISTER: 'org:register',
   ORG_REMOVE: 'org:remove',
+  ORG_CREATE_SCRATCH: 'org:create-scratch',
+  ORG_PROVISION_OUTPUT: 'org:provision-output',
 
   // Chat
   CHAT_HISTORY: 'chat:history',
@@ -61,6 +63,9 @@ export const IPC_CHANNELS = {
   GIT_VALIDATE: 'git:validate',
   GIT_MODIFIED_FILES: 'git:modified-files',
   GIT_DIFF_SUMMARY: 'git:diff-summary',
+  GIT_FULL_DIFF: 'git:full-diff',
+  GIT_FILE_DIFF: 'git:file-diff',
+  GIT_FILES_WITH_STATS: 'git:files-with-stats',
 
   // Browser
   BROWSER_LOAD_URL: 'browser:load-url',

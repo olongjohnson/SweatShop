@@ -3,6 +3,8 @@ import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import ResizableDivider from './components/ResizableDivider';
 import BrowserPane from './components/BrowserPane';
+import DiffView from './components/DiffView';
+import ProvisioningPane from './components/ProvisioningPane';
 import NotificationSystem from './components/NotificationSystem';
 import StoriesView from './views/StoriesView';
 import AnalyticsView from './views/AnalyticsView';
@@ -23,6 +25,7 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(350);
   const [view, setView] = useState<AppView>('dashboard');
   const [completionSummary, setCompletionSummary] = useState<OrchestratorStatus | null>(null);
+  const [contentTab, setContentTab] = useState<'browser' | 'diff' | 'provision'>('browser');
   const bodyRef = useRef<HTMLDivElement>(null);
 
   // Load agents from DB on mount
@@ -50,8 +53,12 @@ export default function App() {
           a.id === data.agentId ? { ...a, status: data.status } : a
         )
       );
+      // Auto-switch to diff tab when agent reaches QA_READY
+      if (data.status === 'QA_READY' && data.agentId === activeAgentId) {
+        setContentTab('diff');
+      }
     });
-  }, []);
+  }, [activeAgentId]);
 
   // Subscribe to orchestrator completion
   useEffect(() => {
@@ -150,6 +157,30 @@ export default function App() {
     setView('dashboard');
   }, []);
 
+  const activeAgent = agents.find((a) => a.id === activeAgentId);
+  const showDiffTab = activeAgent && (
+    activeAgent.status === 'QA_READY' ||
+    activeAgent.status === 'APPROVED' ||
+    activeAgent.status === 'MERGED'
+  );
+
+  const handleProvisionComplete = useCallback((loginUrl?: string) => {
+    if (loginUrl && activeAgentId) {
+      window.sweatshop.browser.loadURL(activeAgentId, loginUrl);
+      setContentTab('browser');
+    }
+  }, [activeAgentId]);
+
+  const renderContentPane = () => {
+    if (contentTab === 'diff' && activeAgentId) {
+      return <DiffView agentId={activeAgentId} />;
+    }
+    if (contentTab === 'provision') {
+      return <ProvisioningPane onComplete={handleProvisionComplete} />;
+    }
+    return <BrowserPane agentId={activeAgentId} />;
+  };
+
   const renderBody = () => {
     switch (view) {
       case 'stories':
@@ -177,7 +208,31 @@ export default function App() {
               <Sidebar agentId={activeAgentId} />
             </div>
             <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
-            <BrowserPane agentId={activeAgentId} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div className="content-pane-tabs">
+                <button
+                  className={`content-pane-tab ${contentTab === 'browser' ? 'active' : ''}`}
+                  onClick={() => setContentTab('browser')}
+                >
+                  Browser
+                </button>
+                {showDiffTab && (
+                  <button
+                    className={`content-pane-tab ${contentTab === 'diff' ? 'active' : ''}`}
+                    onClick={() => setContentTab('diff')}
+                  >
+                    Review Changes
+                  </button>
+                )}
+                <button
+                  className={`content-pane-tab ${contentTab === 'provision' ? 'active' : ''}`}
+                  onClick={() => setContentTab('provision')}
+                >
+                  Provision Org
+                </button>
+              </div>
+              {renderContentPane()}
+            </div>
           </div>
         );
     }

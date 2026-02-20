@@ -49,6 +49,10 @@ const api: SweatShopAPI = {
     discover: () => ipcRenderer.invoke(IPC_CHANNELS.ORG_DISCOVER),
     register: (alias) => ipcRenderer.invoke(IPC_CHANNELS.ORG_REGISTER, alias),
     remove: (orgId) => ipcRenderer.invoke(IPC_CHANNELS.ORG_REMOVE, orgId),
+    createScratch: (alias?) => ipcRenderer.invoke(IPC_CHANNELS.ORG_CREATE_SCRATCH, alias),
+    onProvisionOutput: (callback) => {
+      ipcRenderer.on(IPC_CHANNELS.ORG_PROVISION_OUTPUT, (_, data) => callback(data));
+    },
   },
 
   chat: {
@@ -83,6 +87,9 @@ const api: SweatShopAPI = {
     validate: (dir) => ipcRenderer.invoke(IPC_CHANNELS.GIT_VALIDATE, dir),
     getModifiedFiles: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.GIT_MODIFIED_FILES, agentId),
     getDiffSummary: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.GIT_DIFF_SUMMARY, agentId),
+    getFullDiff: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.GIT_FULL_DIFF, agentId),
+    getFileDiff: (agentId, filePath) => ipcRenderer.invoke(IPC_CHANNELS.GIT_FILE_DIFF, agentId, filePath),
+    getFilesWithStats: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.GIT_FILES_WITH_STATS, agentId),
   },
 
   browser: {

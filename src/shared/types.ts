@@ -218,6 +218,8 @@ export interface SweatShopAPI {
     discover: () => Promise<ScratchOrg[]>;
     register: (alias: string) => Promise<ScratchOrg>;
     remove: (orgId: string) => Promise<void>;
+    createScratch: (alias?: string) => Promise<ScratchOrg | null>;
+    onProvisionOutput: (callback: (data: { data: string }) => void) => void;
   };
   chat: {
     history: (agentId: string) => Promise<ChatMessage[]>;
@@ -247,6 +249,9 @@ export interface SweatShopAPI {
     validate: (dir: string) => Promise<{ valid: boolean; error?: string }>;
     getModifiedFiles: (agentId: string) => Promise<string[]>;
     getDiffSummary: (agentId: string) => Promise<{ filesChanged: number; insertions: number; deletions: number }>;
+    getFullDiff: (agentId: string) => Promise<string>;
+    getFileDiff: (agentId: string, filePath: string) => Promise<string>;
+    getFilesWithStats: (agentId: string) => Promise<Array<{ path: string; insertions: number; deletions: number }>>;
   };
   browser: {
     loadURL: (agentId: string, url: string) => Promise<void>;
