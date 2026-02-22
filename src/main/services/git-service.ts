@@ -15,13 +15,13 @@ function git(args: string[], cwd: string): Promise<string> {
   });
 }
 
-function generateBranchName(ticketId: string, title: string): string {
+function generateBranchName(directiveId: string, title: string): string {
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 40);
-  return `feature/${ticketId}-${slug}`;
+  return `feature/${directiveId}-${slug}`;
 }
 
 export class GitService {
@@ -50,8 +50,8 @@ export class GitService {
     return settings.git?.baseBranch || 'main';
   }
 
-  async createFeatureBranch(ticketId: string, title: string): Promise<string> {
-    const branchName = generateBranchName(ticketId, title);
+  async createFeatureBranch(directiveId: string, title: string): Promise<string> {
+    const branchName = generateBranchName(directiveId, title);
     const baseBranch = this.getBaseBranch();
 
     // Ensure base is up to date
@@ -71,10 +71,10 @@ export class GitService {
   }
 
   /**
-   * Create a git worktree for an agent — gives them an isolated working directory.
+   * Create a git worktree for a conscript — gives them an isolated working directory.
    */
-  async createWorktree(agentId: string, branchName: string): Promise<string> {
-    const worktreePath = path.join(this.workingDir, '.worktrees', agentId);
+  async createWorktree(conscriptId: string, branchName: string): Promise<string> {
+    const worktreePath = path.join(this.workingDir, '.worktrees', conscriptId);
     const baseBranch = this.getBaseBranch();
 
     // Clean up stale worktree if exists
@@ -98,10 +98,10 @@ export class GitService {
   }
 
   /**
-   * Remove an agent's worktree.
+   * Remove a conscript's worktree.
    */
-  async removeWorktree(agentId: string): Promise<void> {
-    const worktreePath = path.join(this.workingDir, '.worktrees', agentId);
+  async removeWorktree(conscriptId: string): Promise<void> {
+    const worktreePath = path.join(this.workingDir, '.worktrees', conscriptId);
     if (!fs.existsSync(worktreePath)) return;
 
     try {
@@ -233,6 +233,31 @@ export class GitService {
 
   async deleteBranch(branchName: string): Promise<void> {
     await git(['branch', '-D', branchName], this.workingDir);
+  }
+
+  async getCommitLog(branchName: string): Promise<Array<{
+    hash: string;
+    shortHash: string;
+    subject: string;
+    author: string;
+    date: string;
+  }>> {
+    const baseBranch = this.getBaseBranch();
+    try {
+      const output = await git(
+        ['log', '--format=%H|%h|%s|%an|%aI', `${baseBranch}..${branchName}`],
+        this.workingDir
+      );
+      return output.split('\n').filter(Boolean).map((line) => {
+        const [hash, shortHash, ...rest] = line.split('|');
+        const date = rest.pop()!;
+        const author = rest.pop()!;
+        const subject = rest.join('|'); // subject may contain |
+        return { hash, shortHash, subject, author, date };
+      });
+    } catch {
+      return [];
+    }
   }
 
   async abortMerge(): Promise<void> {

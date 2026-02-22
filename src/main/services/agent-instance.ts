@@ -9,14 +9,14 @@ import type {
   HookInput,
   HookJSONOutput,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentStatus, ChatMessage } from '../../shared/types';
-import { buildAgentSystemPrompt } from '../prompts/agent-system';
+import type { ConscriptStatus, ChatMessage } from '../../shared/types';
+import { buildConscriptSystemPrompt } from '../prompts/agent-system';
 import * as dbService from './database';
 import { analytics } from './analytics';
 import { randomUUID } from 'crypto';
 
 // Debug file logger
-const LOG_FILE = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'sweatshop-agent.log');
+const LOG_FILE = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'sweatshop-conscript.log');
 function debugLog(msg: string): void {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   fs.appendFileSync(LOG_FILE, line);
@@ -44,17 +44,17 @@ async function getZod(): Promise<typeof import('zod/v4')> {
   return _zod;
 }
 
-// Blocked shell patterns (ported from agent-guardrails.ts)
+// Blocked shell patterns (ported from conscript-guardrails.ts)
 const BLOCKED_PATTERNS = [
   { pattern: /rm\s+-rf\s+\//, reason: 'Recursive delete of root is blocked' },
-  { pattern: /git\s+push/, reason: 'Agents cannot push — merging is handled by the controller' },
-  { pattern: /git\s+merge/, reason: 'Agents cannot merge — merging is handled by the controller' },
-  { pattern: /git\s+checkout\s+(main|master)\b/, reason: 'Agents cannot checkout main/master' },
-  { pattern: /git\s+switch\s+(main|master)\b/, reason: 'Agents cannot switch to main/master' },
-  { pattern: /git\s+rebase/, reason: 'Agents cannot rebase' },
+  { pattern: /git\s+push/, reason: 'Conscripts cannot push — merging is handled by the controller' },
+  { pattern: /git\s+merge/, reason: 'Conscripts cannot merge — merging is handled by the controller' },
+  { pattern: /git\s+checkout\s+(main|master)\b/, reason: 'Conscripts cannot checkout main/master' },
+  { pattern: /git\s+switch\s+(main|master)\b/, reason: 'Conscripts cannot switch to main/master' },
+  { pattern: /git\s+rebase/, reason: 'Conscripts cannot rebase' },
   { pattern: /git\s+reset\s+--hard/, reason: 'Hard reset is blocked' },
-  { pattern: /sf\s+org\s+delete/, reason: 'Agents cannot delete orgs' },
-  { pattern: /sf\s+org\s+create/, reason: 'Agents cannot create orgs — the controller does this' },
+  { pattern: /sf\s+org\s+delete/, reason: 'Conscripts cannot delete camps' },
+  { pattern: /sf\s+org\s+create/, reason: 'Conscripts cannot create camps — the controller does this' },
   { pattern: /format\s+[a-zA-Z]:/, reason: 'Disk formatting is blocked' },
   { pattern: /shutdown\s/, reason: 'System shutdown is blocked' },
   { pattern: /reboot\b/, reason: 'System reboot is blocked' },
@@ -62,10 +62,10 @@ const BLOCKED_PATTERNS = [
   { pattern: /dd\s+if=/, reason: 'Raw disk writes are blocked' },
 ];
 
-export class AgentInstance extends EventEmitter {
+export class ConscriptInstance extends EventEmitter {
   readonly id: string;
   readonly name: string;
-  private _status: AgentStatus = 'IDLE';
+  private _status: ConscriptStatus = 'IDLE';
   private runId: string | null = null;
   private sessionId: string | null = null;
   private abortController: AbortController | null = null;
@@ -73,7 +73,7 @@ export class AgentInstance extends EventEmitter {
   private humanResponseResolve: ((value: string) => void) | null = null;
   private interventionStartTime: number | null = null;
 
-  get status(): AgentStatus { return this._status; }
+  get status(): ConscriptStatus { return this._status; }
 
   constructor(id: string, name: string) {
     super();
@@ -81,10 +81,10 @@ export class AgentInstance extends EventEmitter {
     this.name = name;
   }
 
-  private setStatus(newStatus: AgentStatus): void {
+  private setStatus(newStatus: ConscriptStatus): void {
     this._status = newStatus;
     this.emit('status-changed', newStatus);
-    dbService.updateAgent(this.id, { status: newStatus });
+    dbService.updateConscript(this.id, { status: newStatus });
   }
 
   private emitChat(role: ChatMessage['role'], content: string): void {
@@ -93,88 +93,121 @@ export class AgentInstance extends EventEmitter {
   }
 
   async start(config: {
-    ticketId: string;
-    orgAlias: string;
+    directiveId: string;
+    campAlias: string;
     branchName: string;
     prompt: string;
     workingDirectory: string;
+    identity?: {
+      systemPrompt?: string;
+      model?: 'sonnet' | 'opus' | 'haiku';
+      maxTurns?: number;
+      maxBudgetUsd?: number;
+      allowedTools?: string[];
+      disallowedTools?: string[];
+    };
   }): Promise<void> {
-    debugLog(`[AgentInstance ${this.id}] start() called`);
-    debugLog(`[AgentInstance ${this.id}] CLAUDECODE env = ${process.env.CLAUDECODE || 'NOT SET'}`);
-    debugLog(`[AgentInstance ${this.id}] ANTHROPIC_API_KEY set = ${!!process.env.ANTHROPIC_API_KEY}`);
+    debugLog(`[ConscriptInstance ${this.id}] start() called`);
+    debugLog(`[ConscriptInstance ${this.id}] CLAUDECODE env = ${process.env.CLAUDECODE || 'NOT SET'}`);
+    debugLog(`[ConscriptInstance ${this.id}] ANTHROPIC_API_KEY set = ${!!process.env.ANTHROPIC_API_KEY}`);
     this.stopped = false;
 
-    // Create a ticket run in DB
+    // Create a directive run in DB
     this.runId = randomUUID();
     dbService.createRun({
       id: this.runId,
-      ticketId: config.ticketId,
-      agentId: this.id,
-      orgAlias: config.orgAlias,
+      directiveId: config.directiveId,
+      conscriptId: this.id,
+      campAlias: config.campAlias,
       branchName: config.branchName,
     });
 
     this.setStatus('DEVELOPING');
-    this.emitChat('system', `Starting work on ticket. Branch: ${config.branchName}, Org: ${config.orgAlias}`);
+    this.emitChat('system', `Starting work on directive. Branch: ${config.branchName}, Camp: ${config.campAlias}`);
 
-    const systemPrompt = buildAgentSystemPrompt({
-      orgAlias: config.orgAlias,
+    const envPrompt = buildConscriptSystemPrompt({
+      campAlias: config.campAlias,
       branchName: config.branchName,
       projectType: 'salesforce',
     });
 
+    // If identity provides a system prompt, prepend it before environment context
+    const systemPrompt = config.identity?.systemPrompt
+      ? `${config.identity.systemPrompt}\n\n${envPrompt}`
+      : envPrompt;
+
+    // Build allowed tools: merge identity overrides with base + MCP tools
+    const baseTools = [
+      'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
+      'mcp__sweatshop__request_human_input',
+      'mcp__sweatshop__report_development_complete',
+    ];
+    let allowedTools = baseTools;
+    if (config.identity?.allowedTools?.length) {
+      // Merge: identity tools + always-included MCP tools
+      const mcpTools = baseTools.filter((t) => t.startsWith('mcp__'));
+      allowedTools = [...new Set([...config.identity.allowedTools, ...mcpTools])];
+    }
+    if (config.identity?.disallowedTools?.length) {
+      allowedTools = allowedTools.filter((t) => !config.identity!.disallowedTools!.includes(t));
+    }
+
     this.abortController = new AbortController();
 
     // Dynamic import of ESM SDK
-    debugLog(`[AgentInstance ${this.id}] Loading SDK...`);
+    debugLog(`[ConscriptInstance ${this.id}] Loading SDK...`);
     const { query } = await getSDK();
-    debugLog(`[AgentInstance ${this.id}] SDK loaded`);
+    debugLog(`[ConscriptInstance ${this.id}] SDK loaded`);
 
     // Create custom MCP server with app-specific tools
     const mcpServer = await this.createMcpServer();
-    debugLog(`[AgentInstance ${this.id}] MCP server created`);
+    debugLog(`[ConscriptInstance ${this.id}] MCP server created`);
+
+    // Build query options with identity overrides
+    const queryOptions: Record<string, unknown> = {
+      systemPrompt,
+      cwd: config.workingDirectory,
+      abortController: this.abortController,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      allowedTools,
+      mcpServers: {
+        sweatshop: mcpServer,
+      },
+      hooks: {
+        PreToolUse: [
+          this.createBashGuardHook(config.campAlias),
+        ],
+        PostToolUse: [
+          this.createTerminalOutputHook(),
+        ],
+      },
+      settingSources: [],
+      persistSession: false,
+    };
+
+    // Apply identity model/budget/turn overrides
+    if (config.identity?.maxTurns) queryOptions.maxTurns = config.identity.maxTurns;
+    if (config.identity?.maxBudgetUsd) queryOptions.maxCostUsd = config.identity.maxBudgetUsd;
+    if (config.identity?.model) queryOptions.model = config.identity.model;
 
     try {
-      debugLog(`[AgentInstance ${this.id}] Starting query() with cwd=${config.workingDirectory}`);
-      debugLog(`[AgentInstance ${this.id}] Prompt: ${config.prompt.slice(0, 200)}...`);
+      debugLog(`[ConscriptInstance ${this.id}] Starting query() with cwd=${config.workingDirectory}`);
+      debugLog(`[ConscriptInstance ${this.id}] Prompt: ${config.prompt.slice(0, 200)}...`);
       const q = query({
         prompt: config.prompt,
-        options: {
-          systemPrompt,
-          cwd: config.workingDirectory,
-          abortController: this.abortController,
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
-          allowedTools: [
-            'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
-            'mcp__sweatshop__request_human_input',
-            'mcp__sweatshop__report_development_complete',
-          ],
-          mcpServers: {
-            sweatshop: mcpServer,
-          },
-          hooks: {
-            PreToolUse: [
-              this.createBashGuardHook(config.orgAlias),
-            ],
-            PostToolUse: [
-              this.createTerminalOutputHook(),
-            ],
-          },
-          settingSources: [],
-          persistSession: false,
-        },
+        options: queryOptions as any,
       });
 
-      debugLog(`[AgentInstance ${this.id}] query() returned, iterating message stream...`);
+      debugLog(`[ConscriptInstance ${this.id}] query() returned, iterating message stream...`);
       await this.processMessageStream(q);
-      debugLog(`[AgentInstance ${this.id}] Message stream completed, status=${this._status}`);
+      debugLog(`[ConscriptInstance ${this.id}] Message stream completed, status=${this._status}`);
 
-      // If agent finished without calling report_development_complete, auto-transition to QA_READY
+      // If conscript finished without calling report_development_complete, auto-transition to QA_READY
       if (this._status === 'DEVELOPING' || this._status === 'REWORK') {
-        debugLog(`[AgentInstance ${this.id}] Agent completed without reporting — auto-transitioning to QA_READY`);
+        debugLog(`[ConscriptInstance ${this.id}] Conscript completed without reporting — auto-transitioning to QA_READY`);
         this.setStatus('QA_READY');
-        this.emitChat('system', 'Agent finished working. Ready for review.');
+        this.emitChat('system', 'Conscript finished working. Ready for review.');
         if (this.runId) {
           dbService.updateRun(this.runId, { status: 'completed', completedAt: new Date().toISOString() });
         }
@@ -182,12 +215,12 @@ export class AgentInstance extends EventEmitter {
       }
     } catch (err: unknown) {
       if (this.stopped) return; // Expected abort
-      debugLog(`[AgentInstance ${this.id}] Error: ${err}`);
+      debugLog(`[ConscriptInstance ${this.id}] Error: ${err}`);
       const msg = err instanceof Error ? err.message : 'Unknown error';
       const stack = err instanceof Error ? err.stack : '';
       this.setStatus('ERROR');
-      this.emitChat('system', `Agent error: ${msg}`);
-      if (stack) debugLog(`[AgentInstance ${this.id}] Stack: ${stack}`);
+      this.emitChat('system', `Conscript error: ${msg}`);
+      if (stack) debugLog(`[ConscriptInstance ${this.id}] Stack: ${stack}`);
       if (this.runId) {
         dbService.updateRun(this.runId, { status: 'failed', completedAt: new Date().toISOString() });
       }
@@ -205,7 +238,7 @@ export class AgentInstance extends EventEmitter {
         dbService.incrementIntervention(this.runId, {
           timestamp: new Date().toISOString(),
           type: 'question',
-          agentMessage: '(see chat history)',
+          conscriptMessage: '(see chat history)',
           humanResponse: message,
           waitDurationMs,
         });
@@ -216,7 +249,7 @@ export class AgentInstance extends EventEmitter {
 
     this.emitChat('user', message);
 
-    // If the agent is waiting for input, resume it
+    // If the conscript is waiting for input, resume it
     if (this.humanResponseResolve) {
       this.humanResponseResolve(message);
       this.humanResponseResolve = null;
@@ -233,7 +266,7 @@ export class AgentInstance extends EventEmitter {
     }
     this.setStatus('IDLE');
     if (this.humanResponseResolve) {
-      this.humanResponseResolve('[Agent stopped by user]');
+      this.humanResponseResolve('[Conscript stopped by user]');
       this.humanResponseResolve = null;
     }
   }
@@ -248,11 +281,11 @@ export class AgentInstance extends EventEmitter {
       tools: [
         tool(
           'request_human_input',
-          'Ask the human a question. Use this when you need clarification, a decision, or approval. The agent will pause until the human responds.',
+          'Ask the human a question. Use this when you need clarification, a decision, or approval. The conscript will pause until the human responds.',
           { question: z.string().describe('The question to ask the human') },
           async (args) => {
             this.setStatus('NEEDS_INPUT');
-            this.emitChat('agent', args.question);
+            this.emitChat('conscript', args.question);
             this.emit('needs-input', args.question);
             this.interventionStartTime = Date.now();
 
@@ -286,7 +319,7 @@ export class AgentInstance extends EventEmitter {
     });
   }
 
-  private createBashGuardHook(orgAlias: string): HookCallbackMatcher {
+  private createBashGuardHook(campAlias: string): HookCallbackMatcher {
     return {
       matcher: 'Bash',
       hooks: [
@@ -309,9 +342,9 @@ export class AgentInstance extends EventEmitter {
 
           // Auto-inject --target-org for sf commands
           if (/^\s*sf\s/.test(command) && !/--target-org\b|-o\s/.test(command)) {
-            const orgCommands = /sf\s+(project\s+deploy|project\s+retrieve|apex\s+run|apex\s+test|data\s+|org\s+open|org\s+display)/;
-            if (orgCommands.test(command)) {
-              const modified = command.trimEnd() + ` --target-org ${orgAlias}`;
+            const campCommands = /sf\s+(project\s+deploy|project\s+retrieve|apex\s+run|apex\s+test|data\s+|org\s+open|org\s+display)/;
+            if (campCommands.test(command)) {
+              const modified = command.trimEnd() + ` --target-org ${campAlias}`;
               return {
                 hookSpecificOutput: {
                   hookEventName: 'PreToolUse' as const,
@@ -351,16 +384,16 @@ export class AgentInstance extends EventEmitter {
   }
 
   private async processMessageStream(q: Query): Promise<void> {
-    debugLog(`[AgentInstance ${this.id}] Entering message stream loop`);
+    debugLog(`[ConscriptInstance ${this.id}] Entering message stream loop`);
     for await (const message of q) {
-      debugLog(`[AgentInstance ${this.id}] Message: type=${message.type}, subtype=${'subtype' in message ? (message as { subtype?: string }).subtype : 'n/a'}`);
+      debugLog(`[ConscriptInstance ${this.id}] Message: type=${message.type}, subtype=${'subtype' in message ? (message as { subtype?: string }).subtype : 'n/a'}`);
       if (this.stopped) break;
 
       switch (message.type) {
         case 'system':
           if ('subtype' in message && message.subtype === 'init') {
             this.sessionId = message.session_id;
-            debugLog(`[AgentInstance ${this.id}] Session initialized: ${message.session_id}`);
+            debugLog(`[ConscriptInstance ${this.id}] Session initialized: ${message.session_id}`);
           }
           break;
 
@@ -370,7 +403,7 @@ export class AgentInstance extends EventEmitter {
           if (Array.isArray(content)) {
             for (const block of content) {
               if (block.type === 'text' && 'text' in block && block.text) {
-                this.emitChat('agent', block.text);
+                this.emitChat('conscript', block.text);
               }
             }
           }
@@ -392,7 +425,7 @@ export class AgentInstance extends EventEmitter {
             const errorResult = result as SDKResultError;
             if (errorResult.errors?.length && !this.stopped) {
               this.setStatus('ERROR');
-              this.emitChat('system', `Agent error: ${errorResult.errors.join(', ')}`);
+              this.emitChat('system', `Conscript error: ${errorResult.errors.join(', ')}`);
               if (this.runId) {
                 dbService.updateRun(this.runId, { status: 'failed', completedAt: new Date().toISOString() });
               }

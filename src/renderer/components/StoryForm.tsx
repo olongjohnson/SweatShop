@@ -1,26 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import type { Ticket, TicketStatus } from '../../shared/types';
+import type { Directive, DirectiveStatus, WorkflowTemplate } from '../../shared/types';
+import AiGeneratePopover from './AiGeneratePopover';
 
 interface StoryFormProps {
-  ticket: Ticket | null;
-  allTickets: Ticket[];
+  directive: Directive | null;
+  allDirectives: Directive[];
   onClose: () => void;
 }
 
-export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProps) {
-  const isEdit = !!ticket;
+export default function StoryForm({ directive, allDirectives, onClose }: StoryFormProps) {
+  const isEdit = !!directive;
 
-  const [title, setTitle] = useState(ticket?.title || '');
-  const [description, setDescription] = useState(ticket?.description || '');
-  const [acceptanceCriteria, setAcceptanceCriteria] = useState(ticket?.acceptanceCriteria || '');
-  const [priority, setPriority] = useState<Ticket['priority']>(ticket?.priority || 'medium');
-  const [status, setStatus] = useState<TicketStatus>(ticket?.status || 'backlog');
-  const [labels, setLabels] = useState<string[]>(ticket?.labels || []);
+  const [title, setTitle] = useState(directive?.title || '');
+  const [description, setDescription] = useState(directive?.description || '');
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState(directive?.acceptanceCriteria || '');
+  const [priority, setPriority] = useState<Directive['priority']>(directive?.priority || 'medium');
+  const [status, setStatus] = useState<DirectiveStatus>(directive?.status || 'backlog');
+  const [labels, setLabels] = useState<string[]>(directive?.labels || []);
   const [labelInput, setLabelInput] = useState('');
-  const [dependsOn, setDependsOn] = useState<string[]>(ticket?.dependsOn || []);
+  const [dependsOn, setDependsOn] = useState<string[]>(directive?.dependsOn || []);
+  const [workflowTemplateId, setWorkflowTemplateId] = useState<string>(directive?.workflowTemplateId || '');
+  const [workflows, setWorkflows] = useState<WorkflowTemplate[]>([]);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [aiError, setAiError] = useState('');
+  const [genError, setGenError] = useState('');
+
+  useEffect(() => {
+    window.sweatshop.workflows.list().then(setWorkflows).catch(() => {});
+  }, []);
 
   const handleLabelKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && labelInput.trim()) {
@@ -42,23 +49,21 @@ export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProp
     );
   };
 
-  const handleAiAssist = async () => {
-    if (!title.trim()) return;
+  const handleGenerate = async (freeformText: string) => {
     setGenerating(true);
-    setAiError('');
+    setGenError('');
     try {
-      const result = await window.sweatshop.stories.generate({
-        title,
-        description: description || undefined,
-      });
+      const result = await window.sweatshop.stories.generate({ freeformInput: freeformText });
+      if (result.title) setTitle(result.title);
       setDescription(result.description);
       setAcceptanceCriteria(result.acceptanceCriteria);
+      if (result.priority) setPriority(result.priority);
       if (result.suggestedLabels.length > 0) {
         setLabels((prev) => [...new Set([...prev, ...result.suggestedLabels])]);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'AI generation failed';
-      setAiError(msg);
+      setGenError(msg);
     } finally {
       setGenerating(false);
     }
@@ -69,7 +74,7 @@ export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProp
     setSaving(true);
     try {
       const data = {
-        source: ticket?.source || 'manual' as const,
+        source: directive?.source || 'manual' as const,
         title: title.trim(),
         description,
         acceptanceCriteria,
@@ -77,13 +82,14 @@ export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProp
         status,
         labels,
         dependsOn,
-        externalId: ticket?.externalId,
+        externalId: directive?.externalId,
+        workflowTemplateId: workflowTemplateId || undefined,
       };
 
       if (isEdit) {
-        await window.sweatshop.tickets.update(ticket.id, data);
+        await window.sweatshop.directives.update(directive.id, data);
       } else {
-        await window.sweatshop.tickets.create(data);
+        await window.sweatshop.directives.create(data);
       }
       onClose();
     } catch (err) {
@@ -93,21 +99,30 @@ export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProp
     }
   };
 
-  // Other tickets for dependency selection (exclude self)
-  const otherTickets = allTickets.filter((t) => t.id !== ticket?.id);
+  // Other directives for dependency selection (exclude self)
+  const otherDirectives = allDirectives.filter((t) => t.id !== directive?.id);
 
   return (
     <div className="story-form-overlay" onClick={onClose}>
       <div className="story-form" onClick={(e) => e.stopPropagation()}>
         <div className="story-form-header">
           <h3>{isEdit ? 'Edit Story' : 'New Story'}</h3>
-          {ticket?.source === 'deathmark' && (
-            <span className="story-source-badge deathmark">
-              Synced from Deathmark {ticket.externalId ? `(${ticket.externalId})` : ''}
-            </span>
-          )}
-          <button className="story-form-close" onClick={onClose}>x</button>
+          <div className="story-form-header-right">
+            {directive?.source === 'deathmark' && (
+              <span className="story-source-badge deathmark">
+                Synced from Deathmark {directive.externalId ? `(${directive.externalId})` : ''}
+              </span>
+            )}
+            <AiGeneratePopover
+              entityType="directive"
+              onGenerate={handleGenerate}
+              generating={generating}
+            />
+            <button className="story-form-close" onClick={onClose}>x</button>
+          </div>
         </div>
+
+        {genError && <div className="story-form-error">{genError}</div>}
 
         <div className="story-form-body">
           <label>
@@ -122,42 +137,28 @@ export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProp
 
           <label>
             Description *
-            <div className="field-with-ai">
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Detailed description..."
-                rows={5}
-              />
-              <button
-                className="ai-assist-btn"
-                onClick={handleAiAssist}
-                disabled={generating || !title.trim()}
-                title={title.trim() ? 'Generate with AI' : 'Enter a title first'}
-              >
-                {generating ? '...' : 'AI'}
-              </button>
-            </div>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Detailed description..."
+              rows={5}
+            />
           </label>
 
           <label>
             Acceptance Criteria
-            <div className="field-with-ai">
-              <textarea
-                value={acceptanceCriteria}
-                onChange={(e) => setAcceptanceCriteria(e.target.value)}
-                placeholder="- [ ] Criterion 1&#10;- [ ] Criterion 2"
-                rows={4}
-              />
-            </div>
+            <textarea
+              value={acceptanceCriteria}
+              onChange={(e) => setAcceptanceCriteria(e.target.value)}
+              placeholder="- [ ] Criterion 1&#10;- [ ] Criterion 2"
+              rows={4}
+            />
           </label>
-
-          {aiError && <div className="story-form-error">{aiError}</div>}
 
           <div className="story-form-row">
             <label>
               Priority
-              <select value={priority} onChange={(e) => setPriority(e.target.value as Ticket['priority'])}>
+              <select value={priority} onChange={(e) => setPriority(e.target.value as Directive['priority'])}>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -167,7 +168,7 @@ export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProp
 
             <label>
               Status
-              <select value={status} onChange={(e) => setStatus(e.target.value as TicketStatus)}>
+              <select value={status} onChange={(e) => setStatus(e.target.value as DirectiveStatus)}>
                 <option value="backlog">Backlog</option>
                 <option value="ready">Ready</option>
                 <option value="in_progress">In Progress</option>
@@ -178,6 +179,23 @@ export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProp
               </select>
             </label>
           </div>
+
+          {workflows.length > 0 && (
+            <label>
+              Workflow Pipeline
+              <select
+                value={workflowTemplateId}
+                onChange={(e) => setWorkflowTemplateId(e.target.value)}
+              >
+                <option value="">No workflow (default dispatch)</option>
+                {workflows.map((wf) => (
+                  <option key={wf.id} value={wf.id}>
+                    {wf.name} ({wf.stages.length} stage{wf.stages.length !== 1 ? 's' : ''})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label>
             Labels
@@ -198,11 +216,11 @@ export default function StoryForm({ ticket, allTickets, onClose }: StoryFormProp
             </div>
           </label>
 
-          {otherTickets.length > 0 && (
+          {otherDirectives.length > 0 && (
             <label>
               Dependencies
               <div className="dependency-list">
-                {otherTickets.map((t) => (
+                {otherDirectives.map((t) => (
                   <label key={t.id} className="dependency-item">
                     <input
                       type="checkbox"

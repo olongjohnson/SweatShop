@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { ChatMessage, AgentStatus, Ticket } from '../../shared/types';
+import type { ChatMessage, ConscriptStatus, Directive, Camp } from '../../shared/types';
 
 interface ChatPaneProps {
-  agentId: string | null;
+  conscriptId: string | null;
 }
 
 function relativeTime(timestamp: string): string {
@@ -77,44 +77,82 @@ function slugify(text: string): string {
     .slice(0, 40);
 }
 
-function TicketPicker({ agentId, onAssigned }: { agentId: string; onAssigned: () => void }) {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [selectedTicket, setSelectedTicket] = useState<string>('');
+function DirectivePicker({ conscriptId, onAssigned }: { conscriptId: string; onAssigned: () => void }) {
+  const [directives, setDirectives] = useState<Directive[]>([]);
+  const [camps, setCamps] = useState<Camp[]>([]);
+  const [selectedDirective, setSelectedDirective] = useState<string>('');
+  const [selectedCamp, setSelectedCamp] = useState<string>('');
   const [assigning, setAssigning] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    window.sweatshop.tickets.list().then((all) => {
+    window.sweatshop.directives.list().then((all) => {
       const available = all.filter(
         (t) => t.status === 'backlog' || t.status === 'ready'
       );
-      setTickets(available);
+      setDirectives(available);
+    });
+    window.sweatshop.camps.list().then((all) => {
+      const available = all.filter((o) => o.status === 'available');
+      setCamps(available);
+      if (available.length > 0) setSelectedCamp(available[0].alias);
     });
   }, []);
 
   const handleAssign = async () => {
-    if (!selectedTicket) return;
+    if (!selectedDirective) return;
     setAssigning(true);
     setError('');
 
     try {
-      const ticket = tickets.find((t) => t.id === selectedTicket);
-      if (!ticket) return;
+      const directive = directives.find((t) => t.id === selectedDirective);
+      if (!directive) return;
 
-      const branchName = `agent/${slugify(ticket.title)}`;
-      const prompt = [
-        `# ${ticket.title}`,
+      const branchName = `conscript/${slugify(directive.title)}`;
+
+      // Claim a camp from the pool if one is selected
+      let campAlias = '';
+      if (selectedCamp) {
+        const claimed = await window.sweatshop.camps.claim(conscriptId);
+        if (claimed) {
+          campAlias = claimed.alias;
+        }
+      }
+
+      // Build base prompt
+      const promptParts = [
+        `# ${directive.title}`,
         '',
-        ticket.description,
+        directive.description,
         '',
-        ticket.acceptanceCriteria ? `## Acceptance Criteria\n${ticket.acceptanceCriteria}` : '',
-      ].filter(Boolean).join('\n');
+        directive.acceptanceCriteria ? `## Acceptance Criteria\n${directive.acceptanceCriteria}` : '',
+      ].filter(Boolean);
+
+      // Include context from previous attempts if chat history exists
+      const history = await window.sweatshop.chat.history(conscriptId);
+      if (history.length > 0) {
+        const contextMessages = history
+          .filter((m) => m.role !== 'system' || m.content.includes('Rework') || m.content.includes('scrapped'))
+          .slice(-20) // last 20 relevant messages
+          .map((m) => `[${m.role}]: ${m.content}`)
+          .join('\n');
+
+        promptParts.push(
+          '',
+          '## Previous Attempt Context',
+          'This directive was previously worked on by this conscript. Here is the conversation history from the last attempt. Use this context to avoid repeating the same mistakes and to iterate on the approach:',
+          '',
+          contextMessages,
+        );
+      }
+
+      const prompt = promptParts.join('\n');
 
       const settings = await window.sweatshop.settings.get();
       const workingDirectory = settings.git?.workingDirectory || '';
 
-      await window.sweatshop.agents.assign(agentId, selectedTicket, {
-        orgAlias: '',
+      await window.sweatshop.conscripts.assign(conscriptId, selectedDirective, {
+        campAlias,
         branchName,
         refinedPrompt: prompt,
         workingDirectory,
@@ -122,7 +160,7 @@ function TicketPicker({ agentId, onAssigned }: { agentId: string; onAssigned: ()
 
       onAssigned();
     } catch (err: any) {
-      setError(err.message || 'Failed to assign ticket');
+      setError(err.message || 'Failed to assign directive');
     } finally {
       setAssigning(false);
     }
@@ -130,19 +168,19 @@ function TicketPicker({ agentId, onAssigned }: { agentId: string; onAssigned: ()
 
   return (
     <div className="ticket-picker">
-      <div className="ticket-picker-title">Assign a ticket to start working</div>
-      {tickets.length === 0 ? (
+      <div className="ticket-picker-title">Assign a directive to start working</div>
+      {directives.length === 0 ? (
         <div className="ticket-picker-empty">
-          No tickets available. Create one in Stories first.
+          No directives available. Create one in Stories first.
         </div>
       ) : (
         <>
           <div className="ticket-picker-list">
-            {tickets.map((t) => (
+            {directives.map((t) => (
               <button
                 key={t.id}
-                className={`ticket-picker-item ${selectedTicket === t.id ? 'selected' : ''}`}
-                onClick={() => setSelectedTicket(t.id)}
+                className={`ticket-picker-item ${selectedDirective === t.id ? 'selected' : ''}`}
+                onClick={() => setSelectedDirective(t.id)}
               >
                 <span className={`story-status-dot`} style={{
                   background: t.priority === 'critical' ? 'var(--error)' :
@@ -158,11 +196,31 @@ function TicketPicker({ agentId, onAssigned }: { agentId: string; onAssigned: ()
               </button>
             ))}
           </div>
+          <div className="ticket-picker-org">
+            <label className="ticket-picker-org-label">Camp</label>
+            {camps.length > 0 ? (
+              <select
+                className="ticket-picker-org-select"
+                value={selectedCamp}
+                onChange={(e) => setSelectedCamp(e.target.value)}
+              >
+                {camps.map((o) => (
+                  <option key={o.id} value={o.alias}>
+                    {o.alias}{o.username ? ` (${o.username})` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="ticket-picker-org-none">
+                No camps available — add one in Settings
+              </span>
+            )}
+          </div>
           {error && <div className="story-form-error">{error}</div>}
           <button
             className="btn-primary ticket-picker-assign"
             onClick={handleAssign}
-            disabled={!selectedTicket || assigning}
+            disabled={!selectedDirective || assigning}
           >
             {assigning ? 'Assigning...' : 'Start Work'}
           </button>
@@ -172,9 +230,9 @@ function TicketPicker({ agentId, onAssigned }: { agentId: string; onAssigned: ()
   );
 }
 
-export default function ChatPane({ agentId }: ChatPaneProps) {
+export default function ChatPane({ conscriptId }: ChatPaneProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>('IDLE');
+  const [conscriptStatus, setConscriptStatus] = useState<ConscriptStatus>('IDLE');
   const [input, setInput] = useState('');
   const [rejectFeedback, setRejectFeedback] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -184,50 +242,50 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load chat history when agentId changes
+  // Load chat history when conscriptId changes
   useEffect(() => {
-    if (!agentId) {
+    if (!conscriptId) {
       setMessages([]);
-      setAgentStatus('IDLE');
+      setConscriptStatus('IDLE');
       return;
     }
 
     let cancelled = false;
 
     Promise.all([
-      window.sweatshop.chat.history(agentId),
-      window.sweatshop.agents.get(agentId),
-    ]).then(([history, agent]) => {
+      window.sweatshop.chat.history(conscriptId),
+      window.sweatshop.conscripts.get(conscriptId),
+    ]).then(([history, conscript]) => {
       if (cancelled) return;
       setMessages(history);
-      if (agent) setAgentStatus(agent.status);
+      if (conscript) setConscriptStatus(conscript.status);
       setIsAtBottom(true);
       setHasNewMessages(false);
     });
 
     return () => { cancelled = true; };
-  }, [agentId]);
+  }, [conscriptId]);
 
   // Subscribe to IPC events
   useEffect(() => {
-    if (!agentId) return;
+    if (!conscriptId) return;
 
     const handleNewMessage = (msg: ChatMessage) => {
-      if (msg.agentId !== agentId) return;
+      if (msg.conscriptId !== conscriptId) return;
       setMessages((prev) => [...prev, msg]);
       if (!isAtBottom) {
         setHasNewMessages(true);
       }
     };
 
-    const handleStatusChanged = (data: { agentId: string; status: AgentStatus }) => {
-      if (data.agentId !== agentId) return;
-      setAgentStatus(data.status);
+    const handleStatusChanged = (data: { conscriptId: string; status: ConscriptStatus }) => {
+      if (data.conscriptId !== conscriptId) return;
+      setConscriptStatus(data.status);
     };
 
     window.sweatshop.chat.onMessage(handleNewMessage);
-    window.sweatshop.agents.onStatusChanged(handleStatusChanged);
-  }, [agentId, isAtBottom]);
+    window.sweatshop.conscripts.onStatusChanged(handleStatusChanged);
+  }, [conscriptId, isAtBottom]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -238,10 +296,10 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
 
   // Focus input when NEEDS_INPUT
   useEffect(() => {
-    if (agentStatus === 'NEEDS_INPUT' && inputRef.current) {
+    if (conscriptStatus === 'NEEDS_INPUT' && inputRef.current) {
       inputRef.current.focus();
     }
-  }, [agentStatus]);
+  }, [conscriptStatus]);
 
   const handleScroll = useCallback(() => {
     if (!messagesRef.current) return;
@@ -260,11 +318,11 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
   }, []);
 
   const handleSend = useCallback(async () => {
-    if (!agentId || !input.trim()) return;
+    if (!conscriptId || !input.trim()) return;
     const text = input.trim();
     setInput('');
-    await window.sweatshop.chat.send(agentId, text);
-  }, [agentId, input]);
+    await window.sweatshop.chat.send(conscriptId, text);
+  }, [conscriptId, input]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -277,58 +335,61 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
   );
 
   const handleApprove = useCallback(async () => {
-    if (!agentId) return;
+    if (!conscriptId) return;
     const confirmed = window.confirm(
-      'This will merge the agent\'s work into the base branch. Are you sure?'
+      'This will merge the conscript\'s work into the base branch. Are you sure?'
     );
     if (!confirmed) return;
-    await window.sweatshop.agents.approve(agentId);
-  }, [agentId]);
+    await window.sweatshop.conscripts.approve(conscriptId);
+  }, [conscriptId]);
 
   const handleReject = useCallback(async () => {
-    if (!agentId || !rejectFeedback.trim()) return;
-    await window.sweatshop.agents.reject(agentId, rejectFeedback.trim());
+    if (!conscriptId || !rejectFeedback.trim()) return;
+    await window.sweatshop.conscripts.reject(conscriptId, rejectFeedback.trim());
     setRejectFeedback('');
     setShowRejectInput(false);
-  }, [agentId, rejectFeedback]);
+  }, [conscriptId, rejectFeedback]);
 
   const handleStop = useCallback(async () => {
-    if (!agentId) return;
-    await window.sweatshop.agents.stop(agentId);
-  }, [agentId]);
+    if (!conscriptId) return;
+    await window.sweatshop.conscripts.stop(conscriptId);
+  }, [conscriptId]);
 
-  const isInputDisabled = !agentId || agentStatus === 'IDLE';
+  const isInputDisabled = !conscriptId || conscriptStatus === 'IDLE';
 
   const placeholderText = (() => {
-    switch (agentStatus) {
-      case 'NEEDS_INPUT': return 'The agent is waiting for your response...';
+    switch (conscriptStatus) {
+      case 'NEEDS_INPUT': return 'The conscript is waiting for your response...';
       case 'QA_READY': return 'Add a note or use the buttons above...';
       case 'IDLE': return 'No active conversation';
-      default: return 'Send a message to the agent...';
+      default: return 'Send a message to the conscript...';
     }
   })();
 
   return (
     <div className="chat-pane">
+      {/* Directive picker — fixed above scroll area */}
+      {conscriptId && conscriptStatus === 'IDLE' && (
+        <DirectivePicker
+          conscriptId={conscriptId}
+          onAssigned={() => {/* status change will update via IPC */}}
+        />
+      )}
+
       {/* Messages area */}
       <div className="chat-messages" ref={messagesRef} onScroll={handleScroll}>
-        {agentId && agentStatus === 'IDLE' && messages.length === 0 ? (
-          <TicketPicker
-            agentId={agentId}
-            onAssigned={() => {/* status change will update via IPC */}}
-          />
-        ) : messages.length === 0 ? (
+        {!conscriptId || (conscriptStatus !== 'IDLE' && messages.length === 0) ? (
           <div className="chat-empty">
-            {agentId ? 'No messages yet' : 'Select an agent to start chatting'}
+            {conscriptId ? 'No messages yet' : 'Select a conscript to start chatting'}
           </div>
         ) : null}
         {messages.map((msg) => (
           <div key={msg.id} className={`chat-message ${msg.role}`}>
             {msg.role !== 'system' && (
               <div className="chat-message-header">
-                <span className="chat-avatar">{msg.role === 'agent' ? 'A' : 'U'}</span>
+                <span className="chat-avatar">{msg.role === 'conscript' ? 'C' : 'U'}</span>
                 <span className="chat-role-label">
-                  {msg.role === 'agent' ? 'Agent' : 'You'}
+                  {msg.role === 'conscript' ? 'Conscript' : 'You'}
                 </span>
                 <span className="chat-timestamp">{relativeTime(msg.timestamp)}</span>
               </div>
@@ -345,17 +406,17 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
             )}
           </div>
         ))}
-        {(agentStatus === 'DEVELOPING' || agentStatus === 'REWORK' || agentStatus === 'BRANCHING' || agentStatus === 'MERGING' || agentStatus === 'ASSIGNED') && (
+        {(conscriptStatus === 'DEVELOPING' || conscriptStatus === 'REWORK' || conscriptStatus === 'BRANCHING' || conscriptStatus === 'MERGING' || conscriptStatus === 'ASSIGNED') && (
           <div className="chat-thinking">
             <span className="chat-thinking-dots">
               <span /><span /><span />
             </span>
             <span className="chat-thinking-label">
-              {agentStatus === 'BRANCHING' ? 'Creating branch...' :
-               agentStatus === 'ASSIGNED' ? 'Setting up...' :
-               agentStatus === 'MERGING' ? 'Merging...' :
-               agentStatus === 'REWORK' ? 'Reworking...' :
-               'Agent is working...'}
+              {conscriptStatus === 'BRANCHING' ? 'Creating branch...' :
+               conscriptStatus === 'ASSIGNED' ? 'Setting up...' :
+               conscriptStatus === 'MERGING' ? 'Merging...' :
+               conscriptStatus === 'REWORK' ? 'Reworking...' :
+               'Conscript is working...'}
             </span>
           </div>
         )}
@@ -369,77 +430,52 @@ export default function ChatPane({ agentId }: ChatPaneProps) {
       )}
 
       {/* Action bar */}
-      {agentStatus === 'QA_READY' && (
+      {conscriptStatus === 'QA_READY' && (
         <div className="chat-action-bar qa-ready">
-          <div className="chat-action-label">Development complete — QA ready</div>
-          {showRejectInput ? (
-            <div className="chat-reject-input">
-              <textarea
-                value={rejectFeedback}
-                onChange={(e) => setRejectFeedback(e.target.value)}
-                placeholder="Describe what needs to change..."
-                rows={2}
-                autoFocus
-              />
-              <div className="chat-reject-actions">
-                <button className="btn-secondary" onClick={() => setShowRejectInput(false)}>
-                  Cancel
-                </button>
-                <button
-                  className="reject-confirm-btn"
-                  onClick={handleReject}
-                  disabled={!rejectFeedback.trim()}
-                >
-                  Send Feedback
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="chat-action-buttons">
-              <button className="approve-btn" onClick={handleApprove}>Approve</button>
-              <button className="reject-btn" onClick={() => setShowRejectInput(true)}>Reject</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {agentStatus === 'NEEDS_INPUT' && (
-        <div className="chat-action-bar needs-input">
-          <div className="chat-action-label">Agent is waiting for your input</div>
-        </div>
-      )}
-
-      {agentStatus === 'ERROR' && (
-        <div className="chat-action-bar error-state">
-          <div className="chat-action-label">Agent encountered an error</div>
+          <div className="chat-action-label">Development complete — review the PR in the Review Changes tab</div>
           <div className="chat-action-buttons">
-            <button className="btn-primary" onClick={() => agentId && window.sweatshop.chat.send(agentId, 'Please retry the last action.')}>
-              Retry
-            </button>
-            <button className="reject-btn" onClick={handleStop}>Stop Agent</button>
+            <button className="approve-btn" onClick={handleApprove}>Quick Approve</button>
           </div>
         </div>
       )}
 
-      {/* Stop button for working agents */}
-      {(agentStatus === 'DEVELOPING' || agentStatus === 'REWORK' || agentStatus === 'BRANCHING' || agentStatus === 'MERGING' || agentStatus === 'ASSIGNED') && (
+      {conscriptStatus === 'NEEDS_INPUT' && (
+        <div className="chat-action-bar needs-input">
+          <div className="chat-action-label">Conscript is waiting for your input</div>
+        </div>
+      )}
+
+      {conscriptStatus === 'ERROR' && (
+        <div className="chat-action-bar error-state">
+          <div className="chat-action-label">Conscript encountered an error</div>
+          <div className="chat-action-buttons">
+            <button className="btn-primary" onClick={() => conscriptId && window.sweatshop.chat.send(conscriptId, 'Please retry the last action.')}>
+              Retry
+            </button>
+            <button className="reject-btn" onClick={handleStop}>Stop Conscript</button>
+          </div>
+        </div>
+      )}
+
+      {/* Stop button for working conscripts */}
+      {(conscriptStatus === 'DEVELOPING' || conscriptStatus === 'REWORK' || conscriptStatus === 'BRANCHING' || conscriptStatus === 'MERGING' || conscriptStatus === 'ASSIGNED') && (
         <div className="chat-action-bar working-state">
           <div className="chat-action-label">
             <span className="working-indicator" />
-            {agentStatus === 'BRANCHING' ? 'Creating branch...' :
-             agentStatus === 'ASSIGNED' ? 'Setting up agent...' :
-             agentStatus === 'MERGING' ? 'Merging to base branch...' :
-             agentStatus === 'REWORK' ? 'Agent is reworking...' :
-             'Agent is developing...'}
+            {conscriptStatus === 'BRANCHING' ? 'Creating branch...' :
+             conscriptStatus === 'ASSIGNED' ? 'Setting up conscript...' :
+             conscriptStatus === 'MERGING' ? 'Merging to base branch...' :
+             conscriptStatus === 'REWORK' ? 'Conscript is reworking...' :
+             'Conscript is developing...'}
           </div>
           <div className="chat-action-buttons">
-            <button className="reject-btn" onClick={handleStop}>Stop Agent</button>
+            <button className="reject-btn" onClick={handleStop}>Stop Conscript</button>
           </div>
         </div>
       )}
 
       {/* Input area */}
-      <div className={`chat-input-area ${agentStatus === 'NEEDS_INPUT' ? 'highlight' : ''}`}>
+      <div className={`chat-input-area ${conscriptStatus === 'NEEDS_INPUT' ? 'highlight' : ''}`}>
         <textarea
           ref={inputRef}
           value={input}

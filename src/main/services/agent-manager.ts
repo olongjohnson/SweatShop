@@ -1,276 +1,375 @@
 import { BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AgentInstance } from './agent-instance';
+import { ConscriptInstance } from './agent-instance';
 import { GitService } from './git-service';
 import * as dbService from './database';
 import { getSettings } from './settings';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { assertTransition, isInterruptState } from './agent-state-machine';
-import type { Agent, AgentStatus } from '../../shared/types';
+import { lwcPreview } from './lwc-preview';
+import type { Conscript, ConscriptStatus } from '../../shared/types';
 
-const LOG_FILE = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'sweatshop-agent.log');
+const LOG_FILE = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'sweatshop-conscript.log');
 function debugLog(msg: string): void {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   fs.appendFileSync(LOG_FILE, line);
 }
 
-class AgentManager {
-  private agents = new Map<string, AgentInstance>();
+class ConscriptManager {
+  private conscripts = new Map<string, ConscriptInstance>();
   private worktreePaths = new Map<string, string>();
 
   /** Write a chat message to DB AND broadcast it to the renderer */
-  private chatSend(agentId: string, content: string, role: 'system' | 'user' | 'agent' = 'system'): void {
-    const msg = dbService.chatSend(agentId, content, role);
+  private chatSend(conscriptId: string, content: string, role: 'system' | 'user' | 'conscript' = 'system'): void {
+    const msg = dbService.chatSend(conscriptId, content, role);
     this.broadcast(IPC_CHANNELS.CHAT_ON_MESSAGE, msg);
   }
 
-  async createAgent(name: string): Promise<Agent> {
-    const agent = dbService.createAgent({
+  async createConscript(name: string): Promise<Conscript> {
+    const conscript = dbService.createConscript({
       name,
       status: 'IDLE',
     });
-    return agent;
+    return conscript;
   }
 
-  private transitionAgent(agentId: string, newStatus: AgentStatus): void {
-    const agent = dbService.getAgent(agentId);
-    if (!agent) throw new Error(`Agent ${agentId} not found`);
-    assertTransition(agent.status, newStatus);
-    dbService.updateAgent(agentId, { status: newStatus });
-    this.broadcastStatus(agentId, newStatus);
+  private transitionConscript(conscriptId: string, newStatus: ConscriptStatus): void {
+    const conscript = dbService.getConscript(conscriptId);
+    if (!conscript) throw new Error(`Conscript ${conscriptId} not found`);
+    assertTransition(conscript.status, newStatus);
+    dbService.updateConscript(conscriptId, { status: newStatus });
+    this.broadcastStatus(conscriptId, newStatus);
 
     // Fire notification event for interrupt states
     if (isInterruptState(newStatus)) {
-      this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
-        agentId,
-        agentName: agent.name,
+      this.broadcast(IPC_CHANNELS.CONSCRIPT_NOTIFICATION, {
+        conscriptId,
+        conscriptName: conscript.name,
         status: newStatus,
       });
     }
   }
 
-  async assignTicket(
-    agentId: string,
-    ticketId: string,
+  async assignDirective(
+    conscriptId: string,
+    directiveId: string,
     config: {
-      orgAlias: string;
+      campAlias: string;
       branchName: string;
       refinedPrompt: string;
       workingDirectory: string;
+      identity?: {
+        systemPrompt?: string;
+        model?: 'sonnet' | 'opus' | 'haiku';
+        maxTurns?: number;
+        maxBudgetUsd?: number;
+        allowedTools?: string[];
+        disallowedTools?: string[];
+      };
     }
   ): Promise<void> {
-    debugLog(`[AgentManager] assignTicket called: agentId=${agentId}, ticketId=${ticketId}`);
-    debugLog(`[AgentManager] config: branch=${config.branchName}, org=${config.orgAlias}, workDir=${config.workingDirectory}`);
-    debugLog(`[AgentManager] prompt length: ${config.refinedPrompt?.length || 0}`);
+    debugLog(`[ConscriptManager] assignDirective called: conscriptId=${conscriptId}, directiveId=${directiveId}`);
+    debugLog(`[ConscriptManager] config: branch=${config.branchName}, camp=${config.campAlias}, workDir=${config.workingDirectory}`);
+    debugLog(`[ConscriptManager] prompt length: ${config.refinedPrompt?.length || 0}`);
 
     const settings = getSettings();
 
-    const agentRecord = dbService.getAgent(agentId);
-    if (!agentRecord) throw new Error(`Agent ${agentId} not found`);
+    const conscriptRecord = dbService.getConscript(conscriptId);
+    if (!conscriptRecord) throw new Error(`Conscript ${conscriptId} not found`);
+
+    const projectDir = config.workingDirectory || settings.git?.workingDirectory;
+    if (!projectDir) {
+      throw new Error('No project working directory configured. Set it in Settings before assigning work.');
+    }
 
     // IDLE → ASSIGNED
-    this.transitionAgent(agentId, 'ASSIGNED');
-    dbService.updateAgent(agentId, {
-      assignedTicketId: ticketId,
-      assignedOrgAlias: config.orgAlias,
+    this.transitionConscript(conscriptId, 'ASSIGNED');
+    dbService.updateConscript(conscriptId, {
+      assignedDirectiveId: directiveId,
+      assignedCampAlias: config.campAlias,
       branchName: config.branchName,
     });
-    dbService.updateTicket(ticketId, { status: 'in_progress', assignedAgentId: agentId });
+    dbService.updateDirective(directiveId, { status: 'in_progress', assignedConscriptId: conscriptId });
 
     // ASSIGNED → BRANCHING
-    this.transitionAgent(agentId, 'BRANCHING');
-    this.chatSend(agentId, `Creating branch ${config.branchName}...`);
-
-    const projectDir = config.workingDirectory || settings.git?.workingDirectory || process.cwd();
-    let agentWorkDir = projectDir;
-    debugLog(`[AgentManager] projectDir=${projectDir}`);
+    this.transitionConscript(conscriptId, 'BRANCHING');
+    this.chatSend(conscriptId, `Creating branch ${config.branchName}...`);
+    let conscriptWorkDir = projectDir;
+    debugLog(`[ConscriptManager] projectDir=${projectDir}`);
     const gitService = new GitService(projectDir);
     const { valid } = await gitService.validate();
-    debugLog(`[AgentManager] git valid=${valid}`);
+    debugLog(`[ConscriptManager] git valid=${valid}`);
 
     if (valid) {
       try {
-        agentWorkDir = await gitService.createWorktree(agentId, config.branchName);
-        this.worktreePaths.set(agentId, agentWorkDir);
-        this.chatSend(agentId, `Branch created. Working in: ${agentWorkDir}`);
-        debugLog(`[AgentManager] Worktree created at: ${agentWorkDir}`);
+        conscriptWorkDir = await gitService.createWorktree(conscriptId, config.branchName);
+        this.worktreePaths.set(conscriptId, conscriptWorkDir);
+        this.chatSend(conscriptId, `Branch created. Working in: ${conscriptWorkDir}`);
+        debugLog(`[ConscriptManager] Worktree created at: ${conscriptWorkDir}`);
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        debugLog(`[AgentManager] Worktree creation failed: ${errMsg}`);
-        this.chatSend(agentId, `Worktree failed: ${errMsg}. Using project dir instead.`);
+        debugLog(`[ConscriptManager] Worktree creation failed: ${errMsg}`);
+        this.chatSend(conscriptId, `Worktree failed: ${errMsg}. Using project dir instead.`);
       }
     } else {
-      this.chatSend(agentId, `Not a valid git repo. Working in: ${projectDir}`);
+      this.chatSend(conscriptId, `Not a valid git repo. Working in: ${projectDir}`);
     }
 
     // BRANCHING → DEVELOPING
-    this.transitionAgent(agentId, 'DEVELOPING');
-    debugLog(`[AgentManager] Transitioned to DEVELOPING, creating AgentInstance`);
+    this.transitionConscript(conscriptId, 'DEVELOPING');
+    debugLog(`[ConscriptManager] Transitioned to DEVELOPING, creating ConscriptInstance`);
 
-    const instance = new AgentInstance(agentId, agentRecord.name);
-    this.agents.set(agentId, instance);
+    const instance = new ConscriptInstance(conscriptId, conscriptRecord.name);
+    this.conscripts.set(conscriptId, instance);
     this.wireEvents(instance);
 
-    debugLog(`[AgentManager] Calling instance.start()`);
+    debugLog(`[ConscriptManager] Calling instance.start()`);
     instance.start({
-      ticketId,
-      orgAlias: config.orgAlias,
+      directiveId,
+      campAlias: config.campAlias,
       branchName: config.branchName,
       prompt: config.refinedPrompt,
-      workingDirectory: agentWorkDir,
+      workingDirectory: conscriptWorkDir,
+      identity: config.identity,
     }).catch((err: unknown) => {
-      debugLog(`[AgentManager] instance.start() rejected: ${err}`);
+      debugLog(`[ConscriptManager] instance.start() rejected: ${err}`);
     });
   }
 
-  async sendMessage(agentId: string, message: string): Promise<void> {
-    const instance = this.agents.get(agentId);
+  async sendMessage(conscriptId: string, message: string): Promise<void> {
+    const instance = this.conscripts.get(conscriptId);
     if (!instance) {
-      this.chatSend(agentId, message, 'user');
+      this.chatSend(conscriptId, message, 'user');
       return;
     }
     await instance.handleHumanMessage(message);
   }
 
-  async approveWork(agentId: string): Promise<void> {
-    const agent = dbService.getAgent(agentId);
-    if (!agent) throw new Error(`Agent ${agentId} not found`);
+  async approveWork(conscriptId: string): Promise<void> {
+    lwcPreview.stop(conscriptId);
+    const conscript = dbService.getConscript(conscriptId);
+    if (!conscript) throw new Error(`Conscript ${conscriptId} not found`);
 
     // QA_READY → MERGING
-    this.transitionAgent(agentId, 'MERGING');
-    this.chatSend(agentId, 'Merging to base branch...');
+    this.transitionConscript(conscriptId, 'MERGING');
+    this.chatSend(conscriptId, 'Merging to base branch...');
 
     const settings = getSettings();
-    const projectDir = settings.git?.workingDirectory || process.cwd();
+    const projectDir = settings.git?.workingDirectory || '';
     const mergeStrategy = settings.git?.mergeStrategy || 'squash';
 
-    if (agent.branchName) {
+    if (conscript.branchName) {
       const gitService = new GitService(projectDir);
       const { valid } = await gitService.validate();
 
       if (valid) {
-        const result = await gitService.merge(agent.branchName, mergeStrategy);
+        const result = await gitService.merge(conscript.branchName, mergeStrategy);
 
         if (!result.success) {
           await gitService.abortMerge();
           // MERGING → ERROR
-          dbService.updateAgent(agentId, { status: 'ERROR' });
-          this.broadcastStatus(agentId, 'ERROR');
-          this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
-            agentId, agentName: agent.name, status: 'ERROR' as AgentStatus,
+          dbService.updateConscript(conscriptId, { status: 'ERROR' });
+          this.broadcastStatus(conscriptId, 'ERROR');
+          this.broadcast(IPC_CHANNELS.CONSCRIPT_NOTIFICATION, {
+            conscriptId, conscriptName: conscript.name, status: 'ERROR' as ConscriptStatus,
           });
-          this.chatSend(agentId, `Merge conflict detected in: ${result.conflictFiles?.join(', ') || 'unknown files'}`);
+          this.chatSend(conscriptId, `Merge conflict detected in: ${result.conflictFiles?.join(', ') || 'unknown files'}`);
           return;
         }
 
         try {
-          await gitService.removeWorktree(agentId);
-          this.worktreePaths.delete(agentId);
+          await gitService.removeWorktree(conscriptId);
+          this.worktreePaths.delete(conscriptId);
         } catch { /* OK */ }
 
         try {
-          await gitService.deleteBranch(agent.branchName);
+          await gitService.deleteBranch(conscript.branchName);
         } catch { /* branch may already be deleted */ }
       }
     }
 
     // MERGING → IDLE
-    dbService.updateAgent(agentId, {
+    dbService.updateConscript(conscriptId, {
       status: 'IDLE',
-      assignedTicketId: undefined,
+      assignedDirectiveId: undefined,
       branchName: undefined,
     });
-    this.broadcastStatus(agentId, 'IDLE');
+    this.broadcastStatus(conscriptId, 'IDLE');
 
-    const ticketTitle = agent.assignedTicketId
-      ? dbService.getTicket(agent.assignedTicketId)?.title || agent.assignedTicketId
+    const directiveTitle = conscript.assignedDirectiveId
+      ? dbService.getDirective(conscript.assignedDirectiveId)?.title || conscript.assignedDirectiveId
       : '';
 
-    if (agent.assignedTicketId) {
-      dbService.updateTicket(agent.assignedTicketId, { status: 'merged' });
+    if (conscript.assignedDirectiveId) {
+      dbService.updateDirective(conscript.assignedDirectiveId, { status: 'merged' });
     }
 
-    this.chatSend(agentId, 'Work complete! Branch merged.');
+    this.chatSend(conscriptId, 'Work complete! Branch merged.');
 
-    // Notify ticket merged
-    this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
-      agentId,
-      agentName: agent.name,
-      status: 'IDLE' as AgentStatus,
+    // Notify directive merged
+    this.broadcast(IPC_CHANNELS.CONSCRIPT_NOTIFICATION, {
+      conscriptId,
+      conscriptName: conscript.name,
+      status: 'IDLE' as ConscriptStatus,
       event: 'merged',
-      ticketTitle,
+      directiveTitle,
     });
 
-    const instance = this.agents.get(agentId);
+    const instance = this.conscripts.get(conscriptId);
     if (instance) {
       instance.stop();
-      this.agents.delete(agentId);
+      this.conscripts.delete(conscriptId);
     }
   }
 
-  async rejectWork(agentId: string, feedback: string): Promise<void> {
-    const agent = dbService.getAgent(agentId);
-    if (!agent) throw new Error(`Agent ${agentId} not found`);
+  async rejectWork(conscriptId: string, feedback: string): Promise<void> {
+    lwcPreview.stop(conscriptId);
+    const conscript = dbService.getConscript(conscriptId);
+    if (!conscript) throw new Error(`Conscript ${conscriptId} not found`);
 
     // QA_READY → REWORK
-    this.transitionAgent(agentId, 'REWORK');
-    this.chatSend(agentId, `Rework requested: ${feedback}`);
+    this.transitionConscript(conscriptId, 'REWORK');
+    this.chatSend(conscriptId, `Rework requested: ${feedback}`);
 
-    if (agent.assignedTicketId) {
-      dbService.updateTicket(agent.assignedTicketId, { status: 'in_progress' });
+    if (conscript.assignedDirectiveId) {
+      dbService.updateDirective(conscript.assignedDirectiveId, { status: 'in_progress' });
     }
 
-    const instance = this.agents.get(agentId);
+    const instance = this.conscripts.get(conscriptId);
     if (instance) {
       await instance.handleHumanMessage(`REWORK REQUESTED: ${feedback}`);
     }
   }
 
-  async stopAgent(agentId: string): Promise<void> {
-    const instance = this.agents.get(agentId);
+  async stopConscript(conscriptId: string): Promise<void> {
+    lwcPreview.stop(conscriptId);
+    const instance = this.conscripts.get(conscriptId);
     if (instance) {
       instance.stop();
-      this.agents.delete(agentId);
+      this.conscripts.delete(conscriptId);
     }
 
-    const agent = dbService.getAgent(agentId);
-    if (agent) {
+    const conscript = dbService.getConscript(conscriptId);
+    if (conscript) {
       const settings = getSettings();
-      const projectDir = settings.git?.workingDirectory || process.cwd();
+      const projectDir = settings.git?.workingDirectory || '';
+
+      if (projectDir) {
+        const gitService = new GitService(projectDir);
+
+        try {
+          await gitService.removeWorktree(conscriptId);
+          this.worktreePaths.delete(conscriptId);
+        } catch { /* OK */ }
+
+        // Delete the feature branch
+        if (conscript.branchName) {
+          try {
+            await gitService.deleteBranch(conscript.branchName);
+          } catch { /* branch may already be gone */ }
+        }
+      }
+
+      // Reset directive back to ready so it can be reassigned
+      if (conscript.assignedDirectiveId) {
+        dbService.updateDirective(conscript.assignedDirectiveId, { status: 'ready', assignedConscriptId: undefined });
+      }
+    }
+
+    dbService.updateConscript(conscriptId, { status: 'IDLE', assignedDirectiveId: undefined, branchName: undefined });
+    this.broadcastStatus(conscriptId, 'IDLE');
+    this.chatSend(conscriptId, 'Conscript stopped. Ready for new work.');
+  }
+
+  async scrapWork(conscriptId: string): Promise<void> {
+    lwcPreview.stop(conscriptId);
+    const conscript = dbService.getConscript(conscriptId);
+    if (!conscript) throw new Error(`Conscript ${conscriptId} not found`);
+
+    // Stop the running instance if any
+    const instance = this.conscripts.get(conscriptId);
+    if (instance) {
+      instance.stop();
+      this.conscripts.delete(conscriptId);
+    }
+
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory || '';
+    const branchName = conscript.branchName;
+
+    if (projectDir) {
       const gitService = new GitService(projectDir);
 
+      // Remove worktree first (must happen before branch delete)
       try {
-        await gitService.removeWorktree(agentId);
-        this.worktreePaths.delete(agentId);
+        await gitService.removeWorktree(conscriptId);
+        this.worktreePaths.delete(conscriptId);
       } catch { /* OK */ }
+
+      // Delete the feature branch
+      if (branchName) {
+        try {
+          await gitService.deleteBranch(branchName);
+        } catch { /* branch may already be gone */ }
+      }
     }
 
-    dbService.updateAgent(agentId, { status: 'IDLE', assignedTicketId: undefined, branchName: undefined });
-    this.broadcastStatus(agentId, 'IDLE');
+    // Reset directive back to ready
+    if (conscript.assignedDirectiveId) {
+      dbService.updateDirective(conscript.assignedDirectiveId, { status: 'ready', assignedConscriptId: undefined });
+    }
+
+    // Reset conscript to idle
+    dbService.updateConscript(conscriptId, { status: 'IDLE', assignedDirectiveId: undefined, branchName: undefined });
+    this.broadcastStatus(conscriptId, 'IDLE');
+    this.chatSend(conscriptId, 'Changes scrapped. Branch deleted and conscript reset.');
   }
 
-  getAgentInstance(agentId: string): AgentInstance | undefined {
-    return this.agents.get(agentId);
+  getConscriptInstance(conscriptId: string): ConscriptInstance | undefined {
+    return this.conscripts.get(conscriptId);
   }
 
-  getWorktreePath(agentId: string): string | undefined {
-    return this.worktreePaths.get(agentId);
+  getWorktreePath(conscriptId: string): string | undefined {
+    return this.worktreePaths.get(conscriptId);
   }
 
-  listActiveAgents(): AgentInstance[] {
-    return Array.from(this.agents.values());
+  listActiveConscripts(): ConscriptInstance[] {
+    return Array.from(this.conscripts.values());
   }
 
-  private wireEvents(instance: AgentInstance): void {
-    instance.on('status-changed', (status: AgentStatus) => {
+  private async autoCommitWorktree(conscriptId: string): Promise<void> {
+    const worktreePath = this.worktreePaths.get(conscriptId);
+    if (!worktreePath) return;
+
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory;
+    if (!projectDir) return;
+
+    const gitService = new GitService(projectDir);
+    const hasChanges = await gitService.hasChanges(worktreePath);
+    if (hasChanges) {
+      debugLog(`[ConscriptManager] Auto-committing uncommitted work for ${conscriptId}`);
+      await gitService.commitAll(worktreePath, 'chore: auto-commit conscript work for review');
+    }
+  }
+
+  private wireEvents(instance: ConscriptInstance): void {
+    instance.on('status-changed', (status: ConscriptStatus) => {
       this.broadcastStatus(instance.id, status);
 
+      // Auto-commit uncommitted work when conscript reaches QA_READY
+      if (status === 'QA_READY') {
+        this.autoCommitWorktree(instance.id).catch((err) => {
+          debugLog(`[ConscriptManager] autoCommit failed for ${instance.id}: ${err}`);
+        });
+      }
+
       if (isInterruptState(status)) {
-        const agent = dbService.getAgent(instance.id);
-        this.broadcast(IPC_CHANNELS.AGENT_NOTIFICATION, {
-          agentId: instance.id,
-          agentName: agent?.name || instance.name,
+        const conscript = dbService.getConscript(instance.id);
+        this.broadcast(IPC_CHANNELS.CONSCRIPT_NOTIFICATION, {
+          conscriptId: instance.id,
+          conscriptName: conscript?.name || instance.name,
           status,
         });
       }
@@ -281,15 +380,15 @@ class AgentManager {
     });
 
     instance.on('terminal-data', (data: string) => {
-      this.broadcast(IPC_CHANNELS.AGENT_TERMINAL_DATA, {
-        agentId: instance.id,
+      this.broadcast(IPC_CHANNELS.CONSCRIPT_TERMINAL_DATA, {
+        conscriptId: instance.id,
         data,
       });
     });
   }
 
-  private broadcastStatus(agentId: string, status: AgentStatus): void {
-    this.broadcast(IPC_CHANNELS.AGENT_STATUS_CHANGED, { agentId, status });
+  private broadcastStatus(conscriptId: string, status: ConscriptStatus): void {
+    this.broadcast(IPC_CHANNELS.CONSCRIPT_STATUS_CHANGED, { conscriptId, status });
   }
 
   private broadcast(channel: string, data: unknown): void {
@@ -300,4 +399,4 @@ class AgentManager {
 }
 
 // Singleton
-export const agentManager = new AgentManager();
+export const conscriptManager = new ConscriptManager();

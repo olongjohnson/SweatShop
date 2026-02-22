@@ -5,37 +5,37 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalPaneProps {
-  agentId: string | null;
+  conscriptId: string | null;
 }
 
 const terminalTheme = {
-  background: '#0d0d0d',
-  foreground: '#e0e0e0',
-  cursor: '#569CD6',
-  cursorAccent: '#0d0d0d',
-  selectionBackground: '#3a3a5a',
-  black: '#1a1a2e',
-  red: '#e94560',
-  green: '#7ed321',
-  yellow: '#f5a623',
-  blue: '#4a90d9',
-  magenta: '#9013fe',
+  background: '#050505',
+  foreground: '#e8e8e8',
+  cursor: '#F50046',
+  cursorAccent: '#0a0a0a',
+  selectionBackground: '#333333',
+  black: '#111111',
+  red: '#F50046',
+  green: '#23AAFF',
+  yellow: '#ffb800',
+  blue: '#23AAFF',
+  magenta: '#F50046',
   cyan: '#50e3c2',
-  white: '#e0e0e0',
-  brightBlack: '#606080',
-  brightRed: '#ff6b81',
-  brightGreen: '#a8e6cf',
+  white: '#e8e8e8',
+  brightBlack: '#666666',
+  brightRed: '#ff1a5e',
+  brightGreen: '#5bc0ff',
   brightYellow: '#ffd93d',
-  brightBlue: '#6eb5ff',
-  brightMagenta: '#b388ff',
+  brightBlue: '#5bc0ff',
+  brightMagenta: '#c77dff',
   brightCyan: '#84ffff',
   brightWhite: '#ffffff',
 };
 
-// Store terminal buffers per agent so switching tabs preserves scrollback
-const agentBuffers = new Map<string, string>();
+// Store terminal buffers per conscript so switching tabs preserves scrollback
+const conscriptBuffers = new Map<string, string>();
 
-export default function TerminalPane({ agentId }: TerminalPaneProps) {
+export default function TerminalPane({ conscriptId }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -46,7 +46,7 @@ export default function TerminalPane({ agentId }: TerminalPaneProps) {
 
     const term = new Terminal({
       theme: terminalTheme,
-      fontFamily: "'Consolas', 'Courier New', monospace",
+      fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
       fontSize: 13,
       scrollback: 5000,
       disableStdin: true,
@@ -67,22 +67,22 @@ export default function TerminalPane({ agentId }: TerminalPaneProps) {
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Restore buffered output for this agent
-    if (agentId && agentBuffers.has(agentId)) {
-      term.write(agentBuffers.get(agentId)!);
+    // Restore buffered output for this conscript
+    if (conscriptId && conscriptBuffers.has(conscriptId)) {
+      term.write(conscriptBuffers.get(conscriptId)!);
     }
 
     // Subscribe to terminal data via IPC
-    if (agentId) {
-      const handleTerminalData = (data: { agentId: string; data: string }) => {
-        if (data.agentId !== agentId) return;
+    if (conscriptId) {
+      const handleTerminalData = (data: { conscriptId: string; data: string }) => {
+        if (data.conscriptId !== conscriptId) return;
         // Accumulate in buffer
-        const existing = agentBuffers.get(agentId) || '';
-        agentBuffers.set(agentId, existing + data.data);
+        const existing = conscriptBuffers.get(conscriptId) || '';
+        conscriptBuffers.set(conscriptId, existing + data.data);
         term.write(data.data);
       };
 
-      window.sweatshop.agents.onTerminalData(handleTerminalData);
+      window.sweatshop.conscripts.onTerminalData(handleTerminalData);
     }
 
     // ResizeObserver for auto-fit
@@ -97,12 +97,12 @@ export default function TerminalPane({ agentId }: TerminalPaneProps) {
       termRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId]);
+  }, [conscriptId]);
 
   return (
     <div className="terminal-pane">
       <div className="terminal-header">
-        Terminal{agentId ? '' : ' — No agent selected'}
+        Terminal{conscriptId ? '' : ' — No conscript selected'}
       </div>
       <div className="terminal-container" ref={containerRef} />
     </div>

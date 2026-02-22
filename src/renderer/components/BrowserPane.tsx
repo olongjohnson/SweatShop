@@ -1,44 +1,44 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { AgentStatus } from '../../shared/types';
+import type { ConscriptStatus } from '../../shared/types';
 
 interface BrowserPaneProps {
-  agentId: string | null;
+  conscriptId: string | null;
 }
 
-export default function BrowserPane({ agentId }: BrowserPaneProps) {
+export default function BrowserPane({ conscriptId }: BrowserPaneProps) {
   const [currentURL, setCurrentURL] = useState('');
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>('IDLE');
+  const [conscriptStatus, setConscriptStatus] = useState<ConscriptStatus>('IDLE');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Track agent status for display
+  // Track conscript status for display
   useEffect(() => {
-    if (!agentId) {
-      setAgentStatus('IDLE');
+    if (!conscriptId) {
+      setConscriptStatus('IDLE');
       setCurrentURL('');
       return;
     }
 
-    window.sweatshop.agents.get(agentId).then((agent) => {
-      if (agent) setAgentStatus(agent.status);
+    window.sweatshop.conscripts.get(conscriptId).then((conscript) => {
+      if (conscript) setConscriptStatus(conscript.status);
     });
 
-    const handleStatus = (data: { agentId: string; status: AgentStatus }) => {
-      if (data.agentId !== agentId) return;
-      setAgentStatus(data.status);
+    const handleStatus = (data: { conscriptId: string; status: ConscriptStatus }) => {
+      if (data.conscriptId !== conscriptId) return;
+      setConscriptStatus(data.status);
     };
 
-    window.sweatshop.agents.onStatusChanged(handleStatus);
-  }, [agentId]);
+    window.sweatshop.conscripts.onStatusChanged(handleStatus);
+  }, [conscriptId]);
 
   // Update bounds when container resizes
   useEffect(() => {
-    if (!agentId || !containerRef.current) return;
+    if (!conscriptId || !containerRef.current) return;
 
     const updateBounds = () => {
-      if (!containerRef.current || !agentId) return;
+      if (!containerRef.current || !conscriptId) return;
       const rect = containerRef.current.getBoundingClientRect();
-      window.sweatshop.browser.setBounds(agentId, {
+      window.sweatshop.browser.setBounds(conscriptId, {
         x: Math.round(rect.left),
         y: Math.round(rect.top),
         width: Math.round(rect.width),
@@ -56,35 +56,35 @@ export default function BrowserPane({ agentId }: BrowserPaneProps) {
       observer.disconnect();
       window.removeEventListener('resize', updateBounds);
     };
-  }, [agentId]);
+  }, [conscriptId]);
 
-  // Show/hide browser when agent changes
+  // Show/hide browser when conscript changes
   useEffect(() => {
-    if (!agentId) {
+    if (!conscriptId) {
       window.sweatshop.browser.hideAll();
       return;
     }
 
     // Poll current URL
     const interval = setInterval(async () => {
-      const url = await window.sweatshop.browser.getURL(agentId);
+      const url = await window.sweatshop.browser.getURL(conscriptId);
       if (url) setCurrentURL(url);
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [agentId]);
+  }, [conscriptId]);
 
   const handleBack = useCallback(() => {
-    if (agentId) window.sweatshop.browser.back(agentId);
-  }, [agentId]);
+    if (conscriptId) window.sweatshop.browser.back(conscriptId);
+  }, [conscriptId]);
 
   const handleForward = useCallback(() => {
-    if (agentId) window.sweatshop.browser.forward(agentId);
-  }, [agentId]);
+    if (conscriptId) window.sweatshop.browser.forward(conscriptId);
+  }, [conscriptId]);
 
   const handleReload = useCallback(() => {
-    if (agentId) window.sweatshop.browser.reload(agentId);
-  }, [agentId]);
+    if (conscriptId) window.sweatshop.browser.reload(conscriptId);
+  }, [conscriptId]);
 
   const hasURL = currentURL.length > 0;
 
@@ -120,11 +120,11 @@ export default function BrowserPane({ agentId }: BrowserPaneProps) {
             <div className="browser-placeholder-icon">⊞</div>
             <h3>Browser Pane</h3>
             <p>
-              {agentStatus === 'QA_READY'
-                ? 'Loading scratch org...'
-                : agentStatus === 'IDLE'
-                ? 'Select an agent to view their scratch org'
-                : 'Waiting for agent to reach QA_READY...'}
+              {conscriptStatus === 'QA_READY'
+                ? 'Loading camp...'
+                : conscriptStatus === 'IDLE'
+                ? 'Select a conscript to view their camp'
+                : 'Waiting for conscript to reach QA_READY...'}
             </p>
           </div>
         )}

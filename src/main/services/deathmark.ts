@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { getSettings } from './settings';
-import type { Ticket } from '../../shared/types';
+import type { Directive } from '../../shared/types';
 
 // jsforce v3 — use require for CJS compat
 const jsforce = require('jsforce');
@@ -49,18 +49,18 @@ export async function testConnection(): Promise<{ success: boolean; error?: stri
   }
 }
 
-export async function fetchTickets(options?: {
+export async function fetchDirectives(options?: {
   status?: string;
   sprint?: string;
   limit?: number;
-}): Promise<Partial<Ticket>[]> {
+}): Promise<Partial<Directive>[]> {
   if (!conn) await connect();
 
   const settings = getSettings();
   const config = settings.deathmark;
   if (!config) throw new Error('Deathmark not configured');
 
-  const objectName = config.objectName || 'Ticket__c';
+  const objectName = config.objectName || 'Directive__c';
   const fm = config.fieldMapping;
 
   const fields = [
@@ -105,14 +105,14 @@ export async function fetchTickets(options?: {
   }));
 }
 
-export async function updateTicketStatus(externalId: string, status: string): Promise<void> {
+export async function updateDirectiveStatus(externalId: string, status: string): Promise<void> {
   if (!conn) await connect();
 
   const settings = getSettings();
   const config = settings.deathmark;
   if (!config) throw new Error('Deathmark not configured');
 
-  const objectName = config.objectName || 'Ticket__c';
+  const objectName = config.objectName || 'Directive__c';
 
   await conn!.sobject(objectName).update({
     Id: externalId,

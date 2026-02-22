@@ -1,31 +1,31 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { AgentNotification } from '../../shared/types';
+import type { ConscriptNotification } from '../../shared/types';
 
 interface Toast {
   id: string;
   type: 'info' | 'success' | 'warning' | 'error';
   title: string;
   body: string;
-  agentId?: string;
+  conscriptId?: string;
   autoDismissMs: number;
 }
 
 interface NotificationSystemProps {
-  onSelectAgent: (agentId: string) => void;
+  onSelectConscript: (conscriptId: string) => void;
 }
 
 let toastCounter = 0;
 
-function notificationToToast(notification: AgentNotification): Toast {
+function notificationToToast(notification: ConscriptNotification): Toast {
   const id = `toast-${++toastCounter}`;
 
   if (notification.event === 'merged') {
     return {
       id,
       type: 'success',
-      title: 'Ticket Merged',
-      body: `${notification.ticketTitle || 'Ticket'} merged successfully`,
-      agentId: notification.agentId,
+      title: 'Directive Merged',
+      body: `${notification.directiveTitle || 'Directive'} merged successfully`,
+      conscriptId: notification.conscriptId,
       autoDismissMs: 5000,
     };
   }
@@ -36,8 +36,8 @@ function notificationToToast(notification: AgentNotification): Toast {
         id,
         type: 'success',
         title: 'Ready for QA',
-        body: `${notification.agentName} is ready for QA review`,
-        agentId: notification.agentId,
+        body: `${notification.conscriptName} is ready for QA review`,
+        conscriptId: notification.conscriptId,
         autoDismissMs: 0,
       };
     case 'NEEDS_INPUT':
@@ -45,32 +45,32 @@ function notificationToToast(notification: AgentNotification): Toast {
         id,
         type: 'warning',
         title: 'Input Required',
-        body: `${notification.agentName} has a question`,
-        agentId: notification.agentId,
+        body: `${notification.conscriptName} has a question`,
+        conscriptId: notification.conscriptId,
         autoDismissMs: 0,
       };
     case 'ERROR':
       return {
         id,
         type: 'error',
-        title: 'Agent Error',
-        body: `${notification.agentName} encountered an error`,
-        agentId: notification.agentId,
+        title: 'Conscript Error',
+        body: `${notification.conscriptName} encountered an error`,
+        conscriptId: notification.conscriptId,
         autoDismissMs: 0,
       };
     default:
       return {
         id,
         type: 'info',
-        title: 'Agent Update',
-        body: `${notification.agentName}: ${notification.status}`,
-        agentId: notification.agentId,
+        title: 'Conscript Update',
+        body: `${notification.conscriptName}: ${notification.status}`,
+        conscriptId: notification.conscriptId,
         autoDismissMs: 3000,
       };
   }
 }
 
-export default function NotificationSystem({ onSelectAgent }: NotificationSystemProps) {
+export default function NotificationSystem({ onSelectConscript }: NotificationSystemProps) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -93,7 +93,7 @@ export default function NotificationSystem({ onSelectAgent }: NotificationSystem
   }, [dismissToast]);
 
   useEffect(() => {
-    window.sweatshop.agents.onNotification((notification) => {
+    window.sweatshop.conscripts.onNotification((notification) => {
       addToast(notificationToToast(notification));
     });
 
@@ -104,7 +104,7 @@ export default function NotificationSystem({ onSelectAgent }: NotificationSystem
           id: `toast-${++toastCounter}`,
           type: 'success',
           title: 'All Work Complete!',
-          body: `${status.total} tickets processed`,
+          body: `${status.total} directives processed`,
           autoDismissMs: 0,
         });
       }
@@ -127,7 +127,7 @@ export default function NotificationSystem({ onSelectAgent }: NotificationSystem
           key={toast.id}
           className={`toast toast-${toast.type}`}
           onClick={() => {
-            if (toast.agentId) onSelectAgent(toast.agentId);
+            if (toast.conscriptId) onSelectConscript(toast.conscriptId);
             dismissToast(toast.id);
           }}
         >

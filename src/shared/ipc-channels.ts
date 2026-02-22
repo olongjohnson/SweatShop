@@ -1,32 +1,41 @@
 export const IPC_CHANNELS = {
-  // Tickets
-  TICKET_LIST: 'ticket:list',
-  TICKET_GET: 'ticket:get',
-  TICKET_CREATE: 'ticket:create',
-  TICKET_UPDATE: 'ticket:update',
-  TICKET_DELETE: 'ticket:delete',
+  // Directives
+  DIRECTIVE_LIST: 'directive:list',
+  DIRECTIVE_GET: 'directive:get',
+  DIRECTIVE_CREATE: 'directive:create',
+  DIRECTIVE_UPDATE: 'directive:update',
+  DIRECTIVE_DELETE: 'directive:delete',
 
-  // Agents
-  AGENT_LIST: 'agent:list',
-  AGENT_GET: 'agent:get',
-  AGENT_CREATE: 'agent:create',
-  AGENT_UPDATE: 'agent:update',
-  AGENT_ASSIGN: 'agent:assign',
-  AGENT_APPROVE: 'agent:approve',
-  AGENT_REJECT: 'agent:reject',
-  AGENT_STOP: 'agent:stop',
-  AGENT_DELETE: 'agent:delete',
+  // Conscripts
+  CONSCRIPT_LIST: 'conscript:list',
+  CONSCRIPT_GET: 'conscript:get',
+  CONSCRIPT_CREATE: 'conscript:create',
+  CONSCRIPT_UPDATE: 'conscript:update',
+  CONSCRIPT_ASSIGN: 'conscript:assign',
+  CONSCRIPT_APPROVE: 'conscript:approve',
+  CONSCRIPT_REJECT: 'conscript:reject',
+  CONSCRIPT_STOP: 'conscript:stop',
+  CONSCRIPT_SCRAP: 'conscript:scrap',
+  CONSCRIPT_DELETE: 'conscript:delete',
 
-  // Scratch Orgs
-  ORG_LIST: 'org:list',
-  ORG_CLAIM: 'org:claim',
-  ORG_RELEASE: 'org:release',
-  ORG_STATUS: 'org:status',
-  ORG_DISCOVER: 'org:discover',
-  ORG_REGISTER: 'org:register',
-  ORG_REMOVE: 'org:remove',
-  ORG_CREATE_SCRATCH: 'org:create-scratch',
-  ORG_PROVISION_OUTPUT: 'org:provision-output',
+  // Camps
+  CAMP_LIST: 'camp:list',
+  CAMP_CLAIM: 'camp:claim',
+  CAMP_RELEASE: 'camp:release',
+  CAMP_STATUS: 'camp:status',
+  CAMP_DISCOVER: 'camp:discover',
+  CAMP_REGISTER: 'camp:register',
+  CAMP_REMOVE: 'camp:remove',
+  CAMP_CREATE_SCRATCH: 'camp:create-scratch',
+  CAMP_PROVISION: 'camp:provision',
+  CAMP_PROVISION_OUTPUT: 'camp:provision-output',
+  CAMP_DEVHUB_INFO: 'camp:devhub-info',
+  CAMP_SYNC: 'camp:sync',
+  CAMP_DELETE: 'camp:delete',
+  CAMP_OPEN: 'camp:open',
+  CAMP_OPEN_DEVHUB: 'camp:open-devhub',
+  CAMP_ASSIGN: 'camp:assign-to-conscript',
+  CAMP_UNASSIGN: 'camp:unassign-from-conscript',
 
   // Chat
   CHAT_HISTORY: 'chat:history',
@@ -48,9 +57,13 @@ export const IPC_CHANNELS = {
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_UPDATE: 'settings:update',
+  SETTINGS_PICK_DIRECTORY: 'settings:pick-directory',
+  SETTINGS_PICK_FILE: 'settings:pick-file',
 
   // Claude Code
   CLAUDE_AUTH_STATUS: 'claude:auth-status',
+  CLAUDE_AUTH_LOGIN: 'claude:auth-login',
+  CLAUDE_AUTH_LOGIN_OUTPUT: 'claude:auth-login-output',
 
   // Orchestrator
   ORCHESTRATOR_LOAD: 'orchestrator:load',
@@ -66,6 +79,7 @@ export const IPC_CHANNELS = {
   GIT_FULL_DIFF: 'git:full-diff',
   GIT_FILE_DIFF: 'git:file-diff',
   GIT_FILES_WITH_STATS: 'git:files-with-stats',
+  GIT_COMMIT_LOG: 'git:commit-log',
 
   // Browser
   BROWSER_LOAD_URL: 'browser:load-url',
@@ -76,16 +90,47 @@ export const IPC_CHANNELS = {
   BROWSER_GET_URL: 'browser:get-url',
   BROWSER_SHOW: 'browser:show',
   BROWSER_HIDE_ALL: 'browser:hide-all',
+  BROWSER_CREATE_LOCAL_PREVIEW: 'browser:create-local-preview',
+  BROWSER_LOAD_LOCAL_URL: 'browser:load-local-url',
+
+  // LWC Preview
+  LWC_PREVIEW_DETECT: 'lwc-preview:detect',
+  LWC_PREVIEW_START: 'lwc-preview:start',
+  LWC_PREVIEW_STOP: 'lwc-preview:stop',
+  LWC_PREVIEW_STATUS: 'lwc-preview:status',
+  LWC_PREVIEW_OUTPUT: 'lwc-preview:output',
+  LWC_PREVIEW_GET_SESSION: 'lwc-preview:get-session',
 
   // Analytics
   ANALYTICS_RUN: 'analytics:run',
-  ANALYTICS_AGENT: 'analytics:agent',
+  ANALYTICS_CONSCRIPT: 'analytics:conscript',
   ANALYTICS_SESSION: 'analytics:session',
   ANALYTICS_TREND: 'analytics:trend',
   ANALYTICS_EXPORT: 'analytics:export',
 
-  // Agent state changes (main → renderer push)
-  AGENT_STATUS_CHANGED: 'agent:status-changed',
-  AGENT_TERMINAL_DATA: 'agent:terminal-data',
-  AGENT_NOTIFICATION: 'agent:notification',
+  // Identity Templates
+  IDENTITY_GENERATE: 'identity:generate',
+  IDENTITY_LIST: 'identity:list',
+  IDENTITY_GET: 'identity:get',
+  IDENTITY_CREATE: 'identity:create',
+  IDENTITY_UPDATE: 'identity:update',
+  IDENTITY_DELETE: 'identity:delete',
+
+  // Workflow Templates
+  WORKFLOW_GENERATE: 'workflow:generate',
+  WORKFLOW_LIST: 'workflow:list',
+  WORKFLOW_GET: 'workflow:get',
+  WORKFLOW_CREATE: 'workflow:create',
+  WORKFLOW_UPDATE: 'workflow:update',
+  WORKFLOW_DELETE: 'workflow:delete',
+
+  // Pipeline
+  PIPELINE_GET_RUN: 'pipeline:getRun',
+  PIPELINE_RESUME_HUMAN: 'pipeline:resumeHuman',
+  PIPELINE_STAGE_COMPLETE: 'pipeline:stageComplete',
+
+  // Conscript state changes (main → renderer push)
+  CONSCRIPT_STATUS_CHANGED: 'conscript:status-changed',
+  CONSCRIPT_TERMINAL_DATA: 'conscript:terminal-data',
+  CONSCRIPT_NOTIFICATION: 'conscript:notification',
 } as const;

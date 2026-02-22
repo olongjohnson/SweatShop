@@ -7,7 +7,7 @@ export default function MainContent() {
       <div className="main-content-placeholder">
         <img src={logoUrl} alt="SweatShop" />
         <h2>Browser pane will load here</h2>
-        <p>Scratch org URL will appear when agent reaches QA_READY</p>
+        <p>Camp URL will appear when conscript reaches QA_READY</p>
       </div>
     </div>
   );

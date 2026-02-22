@@ -1,6 +1,6 @@
-// ===== Agent States =====
+// ===== Conscript States =====
 
-export type AgentStatus =
+export type ConscriptStatus =
   | 'IDLE'
   | 'ASSIGNED'
   | 'BRANCHING'
@@ -12,11 +12,11 @@ export type AgentStatus =
   | 'REWORK'
   | 'ERROR';
 
-// ===== Ticket Types =====
+// ===== Directive Types =====
 
-export type TicketSource = 'manual' | 'deathmark';
+export type DirectiveSource = 'manual' | 'deathmark';
 
-export type TicketStatus =
+export type DirectiveStatus =
   | 'backlog'
   | 'ready'
   | 'in_progress'
@@ -25,57 +25,78 @@ export type TicketStatus =
   | 'merged'
   | 'rejected';
 
-export interface Ticket {
+export interface Directive {
   id: string;
   externalId?: string;
-  source: TicketSource;
+  source: DirectiveSource;
   title: string;
   description: string;
   acceptanceCriteria: string;
   labels: string[];
   priority: 'low' | 'medium' | 'high' | 'critical';
-  status: TicketStatus;
+  status: DirectiveStatus;
   dependsOn: string[];
-  assignedAgentId?: string;
+  assignedConscriptId?: string;
+  workflowTemplateId?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface Agent {
+export interface Conscript {
   id: string;
   name: string;
-  status: AgentStatus;
-  assignedTicketId?: string;
-  assignedOrgAlias?: string;
+  status: ConscriptStatus;
+  assignedDirectiveId?: string;
+  assignedCampAlias?: string;
   branchName?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface ScratchOrg {
+export interface Camp {
   id: string;
   alias: string;
   status: 'available' | 'leased' | 'expired' | 'error';
-  assignedAgentId?: string;
+  assignedConscriptIds: string[];
   loginUrl?: string;
   expiresAt?: string;
   createdAt: string;
   updatedAt: string;
+  campId?: string;
+  username?: string;
+  edition?: string;
+  instanceUrl?: string;
+  devHubAlias?: string;
+  namespace?: string;
+}
+
+export interface DevHubInfo {
+  devHub: {
+    alias: string;
+    name: string;
+    connected: boolean;
+    instanceUrl: string;
+  } | null;
+  limits: {
+    activeScratchOrgs: { used: number; max: number };
+    dailyScratchOrgs: { used: number; max: number };
+  };
+  camps: Camp[];
 }
 
 export interface ChatMessage {
   id: string;
-  agentId: string;
-  role: 'agent' | 'user' | 'system';
+  conscriptId: string;
+  role: 'conscript' | 'user' | 'system';
   content: string;
   timestamp: string;
 }
 
-export interface TicketRun {
+export interface DirectiveRun {
   id: string;
-  ticketId: string;
-  agentId: string;
-  orgAlias?: string;
+  directiveId: string;
+  conscriptId: string;
+  campAlias?: string;
   branchName?: string;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
   startedAt: string;
@@ -90,14 +111,14 @@ export interface TicketRun {
 export interface InterventionEvent {
   timestamp: string;
   type: 'question' | 'rework' | 'guidance' | 'error_recovery';
-  agentMessage: string;
+  conscriptMessage: string;
   humanResponse?: string;
   waitDurationMs: number;
 }
 
 export interface RefinedPrompt {
   id: string;
-  ticketId: string;
+  directiveId: string;
   runId: string;
   promptText: string;
   createdAt: string;
@@ -116,8 +137,8 @@ export interface OrchestratorStatus {
 // ===== Analytics =====
 
 export interface RunMetrics {
-  ticketId: string;
-  agentId: string;
+  directiveId: string;
+  conscriptId: string;
   status: string;
   startedAt: string;
   completedAt?: string;
@@ -132,11 +153,11 @@ export interface RunMetrics {
   autonomyScore: number;
 }
 
-export interface AgentMetrics {
-  agentId: string;
-  agentName: string;
-  ticketsCompleted: number;
-  avgInterventionsPerTicket: number;
+export interface ConscriptMetrics {
+  conscriptId: string;
+  conscriptName: string;
+  directivesCompleted: number;
+  avgInterventionsPerDirective: number;
   avgReworkRate: number;
   avgDurationMs: number;
   totalTokensUsed: number;
@@ -144,9 +165,9 @@ export interface AgentMetrics {
 }
 
 export interface SessionMetrics {
-  totalTickets: number;
-  completedTickets: number;
-  failedTickets: number;
+  totalDirectives: number;
+  completedDirectives: number;
+  failedDirectives: number;
   totalSessionTimeMs: number;
   totalHumanWaitTimeMs: number;
   totalActiveDevTimeMs: number;
@@ -157,7 +178,7 @@ export interface SessionMetrics {
   velocity: number;
   humanEfficiencyRatio: number;
   totalCostUsd: number;
-  costPerTicketUsd: number;
+  costPerDirectiveUsd: number;
 }
 
 export interface TrendPoint {
@@ -165,14 +186,95 @@ export interface TrendPoint {
   value: number;
 }
 
+// ===== Identity Templates =====
+
+export interface IdentityTemplate {
+  id: string;
+  name: string;
+  role: string;
+  goal: string;
+  backstory: string;
+  portrait: string | null;
+  systemPrompt: string;
+  model: 'sonnet' | 'opus' | 'haiku';
+  effort: 'low' | 'medium' | 'high' | 'max';
+  maxTurns: number | null;
+  maxBudgetUsd: number | null;
+  allowedTools: string[];
+  disallowedTools: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ===== Workflow Templates =====
+
+export type WorkflowStageType = 'refine' | 'execute' | 'review' | 'human';
+
+export interface WorkflowStage {
+  id: string;
+  identityTemplateId: string | null;
+  order: number;
+  type: WorkflowStageType;
+  inputDescription: string;
+  outputDescription: string;
+}
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  stages: WorkflowStage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ===== Pipeline Runs =====
+
+export interface PipelineStageOutput {
+  stageId: string;
+  stageType: WorkflowStageType;
+  identityName: string;
+  output: string;
+  startedAt: string;
+  completedAt: string;
+}
+
+export interface PipelineRun {
+  id: string;
+  directiveId: string;
+  workflowTemplateId: string;
+  status: 'running' | 'paused' | 'completed' | 'failed';
+  currentStageIndex: number;
+  stageOutputs: PipelineStageOutput[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ===== Notifications =====
 
-export interface AgentNotification {
-  agentId: string;
-  agentName: string;
-  status: AgentStatus;
+export interface ConscriptNotification {
+  conscriptId: string;
+  conscriptName: string;
+  status: ConscriptStatus;
   event?: 'merged';
-  ticketTitle?: string;
+  directiveTitle?: string;
+}
+
+// ===== LWC Preview =====
+
+export interface LwcPreviewStatus {
+  conscriptId: string;
+  status: 'starting' | 'running' | 'error' | 'stopped';
+  previewUrl?: string;
+  componentName?: string;
+  error?: string;
+  exitCode?: number;
+}
+
+export interface LwcPreviewSession {
+  status: 'starting' | 'running' | 'error' | 'stopped';
+  previewUrl: string | null;
+  componentName: string;
 }
 
 // ===== Preload API =====
@@ -184,62 +286,73 @@ export interface SweatShopAPI {
     node: string;
     electron: string;
   };
-  tickets: {
-    list: (filter?: { status?: TicketStatus }) => Promise<Ticket[]>;
-    get: (id: string) => Promise<Ticket | null>;
-    create: (data: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Ticket>;
-    update: (id: string, data: Partial<Ticket>) => Promise<Ticket>;
+  directives: {
+    list: (filter?: { status?: DirectiveStatus }) => Promise<Directive[]>;
+    get: (id: string) => Promise<Directive | null>;
+    create: (data: Omit<Directive, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Directive>;
+    update: (id: string, data: Partial<Directive>) => Promise<Directive>;
     delete: (id: string) => Promise<void>;
   };
-  agents: {
-    list: () => Promise<Agent[]>;
-    get: (id: string) => Promise<Agent | null>;
-    create: (data: { name: string }) => Promise<Agent>;
-    update: (id: string, data: Partial<Agent>) => Promise<Agent>;
-    assign: (agentId: string, ticketId: string, config: {
-      orgAlias: string;
+  conscripts: {
+    list: () => Promise<Conscript[]>;
+    get: (id: string) => Promise<Conscript | null>;
+    create: (data: { name: string }) => Promise<Conscript>;
+    update: (id: string, data: Partial<Conscript>) => Promise<Conscript>;
+    assign: (conscriptId: string, directiveId: string, config: {
+      campAlias: string;
       branchName: string;
       refinedPrompt: string;
       workingDirectory: string;
     }) => Promise<void>;
-    approve: (agentId: string) => Promise<void>;
-    reject: (agentId: string, feedback: string) => Promise<void>;
-    stop: (agentId: string) => Promise<void>;
-    delete: (agentId: string) => Promise<void>;
-    onStatusChanged: (callback: (data: { agentId: string; status: AgentStatus }) => void) => void;
-    onTerminalData: (callback: (data: { agentId: string; data: string }) => void) => void;
-    onNotification: (callback: (data: AgentNotification) => void) => void;
+    approve: (conscriptId: string) => Promise<void>;
+    reject: (conscriptId: string, feedback: string) => Promise<void>;
+    stop: (conscriptId: string) => Promise<void>;
+    scrap: (conscriptId: string) => Promise<void>;
+    delete: (conscriptId: string) => Promise<void>;
+    onStatusChanged: (callback: (data: { conscriptId: string; status: ConscriptStatus }) => void) => void;
+    onTerminalData: (callback: (data: { conscriptId: string; data: string }) => void) => void;
+    onNotification: (callback: (data: ConscriptNotification) => void) => void;
   };
-  orgs: {
-    list: () => Promise<ScratchOrg[]>;
-    claim: (agentId: string) => Promise<ScratchOrg | null>;
-    release: (orgId: string) => Promise<void>;
+  camps: {
+    list: () => Promise<Camp[]>;
+    claim: (conscriptId: string) => Promise<Camp | null>;
+    release: (campId: string) => Promise<void>;
     getStatus: () => Promise<{ total: number; available: number; leased: number; expired: number }>;
-    discover: () => Promise<ScratchOrg[]>;
-    register: (alias: string) => Promise<ScratchOrg>;
-    remove: (orgId: string) => Promise<void>;
-    createScratch: (alias?: string) => Promise<ScratchOrg | null>;
+    discover: () => Promise<Camp[]>;
+    register: (alias: string) => Promise<Camp>;
+    remove: (campId: string) => Promise<void>;
+    createScratch: (alias?: string) => Promise<Camp | null>;
+    provision: (alias?: string) => Promise<Camp | null>;
     onProvisionOutput: (callback: (data: { data: string }) => void) => void;
+    getDevHubInfo: () => Promise<DevHubInfo>;
+    sync: () => Promise<Camp[]>;
+    deleteCamp: (alias: string) => Promise<void>;
+    openCamp: (alias: string) => Promise<string>;
+    openDevHub: () => Promise<string>;
+    assignToConscript: (campId: string, conscriptId: string) => Promise<void>;
+    unassignFromConscript: (campId: string, conscriptId: string) => Promise<void>;
   };
   chat: {
-    history: (agentId: string) => Promise<ChatMessage[]>;
-    send: (agentId: string, content: string) => Promise<ChatMessage>;
+    history: (conscriptId: string) => Promise<ChatMessage[]>;
+    send: (conscriptId: string, content: string) => Promise<ChatMessage>;
     onMessage: (callback: (msg: ChatMessage) => void) => void;
   };
   runs: {
-    list: (ticketId?: string) => Promise<TicketRun[]>;
-    get: (id: string) => Promise<TicketRun | null>;
-    current: (agentId: string) => Promise<TicketRun | null>;
+    list: (directiveId?: string) => Promise<DirectiveRun[]>;
+    get: (id: string) => Promise<DirectiveRun | null>;
+    current: (conscriptId: string) => Promise<DirectiveRun | null>;
   };
   stories: {
-    generate: (input: { title: string; description?: string; projectContext?: string }) => Promise<{
+    generate: (input: { freeformInput: string }) => Promise<{
+      title: string;
       description: string;
       acceptanceCriteria: string;
+      priority: 'low' | 'medium' | 'high' | 'critical';
       suggestedLabels: string[];
     }>;
   };
   orchestrator: {
-    loadTickets: (ticketIds: string[]) => Promise<void>;
+    loadDirectives: (directiveIds: string[]) => Promise<void>;
     start: () => Promise<void>;
     stop: () => Promise<void>;
     getStatus: () => Promise<OrchestratorStatus>;
@@ -247,36 +360,86 @@ export interface SweatShopAPI {
   };
   git: {
     validate: (dir: string) => Promise<{ valid: boolean; error?: string }>;
-    getModifiedFiles: (agentId: string) => Promise<string[]>;
-    getDiffSummary: (agentId: string) => Promise<{ filesChanged: number; insertions: number; deletions: number }>;
-    getFullDiff: (agentId: string) => Promise<string>;
-    getFileDiff: (agentId: string, filePath: string) => Promise<string>;
-    getFilesWithStats: (agentId: string) => Promise<Array<{ path: string; insertions: number; deletions: number }>>;
+    getModifiedFiles: (conscriptId: string) => Promise<string[]>;
+    getDiffSummary: (conscriptId: string) => Promise<{ filesChanged: number; insertions: number; deletions: number }>;
+    getFullDiff: (conscriptId: string) => Promise<string>;
+    getFileDiff: (conscriptId: string, filePath: string) => Promise<string>;
+    getFilesWithStats: (conscriptId: string) => Promise<Array<{ path: string; insertions: number; deletions: number }>>;
+    getCommitLog: (conscriptId: string) => Promise<Array<{ hash: string; shortHash: string; subject: string; author: string; date: string }>>;
   };
   browser: {
-    loadURL: (agentId: string, url: string) => Promise<void>;
-    setBounds: (agentId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
-    back: (agentId: string) => Promise<void>;
-    forward: (agentId: string) => Promise<void>;
-    reload: (agentId: string) => Promise<void>;
-    getURL: (agentId: string) => Promise<string>;
-    show: (agentId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
+    loadURL: (conscriptId: string, url: string) => Promise<void>;
+    setBounds: (conscriptId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
+    back: (conscriptId: string) => Promise<void>;
+    forward: (conscriptId: string) => Promise<void>;
+    reload: (conscriptId: string) => Promise<void>;
+    getURL: (conscriptId: string) => Promise<string>;
+    show: (conscriptId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
     hideAll: () => Promise<void>;
+    createLocalPreview: (viewId: string) => Promise<void>;
+    loadLocalURL: (viewId: string, url: string) => Promise<void>;
+  };
+  lwcPreview: {
+    detect: (conscriptId: string) => Promise<string[]>;
+    start: (conscriptId: string, componentName: string) => Promise<string>;
+    stop: (conscriptId: string) => Promise<void>;
+    getSession: (conscriptId: string) => Promise<LwcPreviewSession | null>;
+    onStatus: (callback: (data: LwcPreviewStatus) => void) => void;
+    onOutput: (callback: (data: { conscriptId: string; data: string }) => void) => void;
   };
   deathmark: {
     testConnection: () => Promise<{ success: boolean; error?: string }>;
-    sync: () => Promise<Ticket[]>;
+    sync: () => Promise<Directive[]>;
   };
   claude: {
     authStatus: () => Promise<{ authenticated: boolean; method: string; error?: string }>;
+    login: () => Promise<{ success: boolean; error?: string }>;
+    onLoginOutput: (callback: (data: { text: string; done: boolean }) => void) => void;
   };
   settings: {
     get: () => Promise<SweatShopSettings>;
     update: (data: Partial<SweatShopSettings>) => Promise<SweatShopSettings>;
+    pickDirectory: () => Promise<string | null>;
+    pickFile: (filters?: Array<{ name: string; extensions: string[] }>) => Promise<string | null>;
+  };
+  identities: {
+    generate: (input: { freeformInput: string }) => Promise<{
+      name: string; role: string; goal: string; backstory: string; systemPrompt: string;
+      model: 'sonnet' | 'opus' | 'haiku'; effort: 'low' | 'medium' | 'high' | 'max';
+      allowedTools: string[]; disallowedTools: string[];
+    }>;
+    list: () => Promise<IdentityTemplate[]>;
+    get: (id: string) => Promise<IdentityTemplate | null>;
+    create: (data: Omit<IdentityTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<IdentityTemplate>;
+    update: (id: string, data: Partial<IdentityTemplate>) => Promise<IdentityTemplate>;
+    delete: (id: string) => Promise<void>;
+  };
+  workflows: {
+    generate: (input: {
+      freeformInput: string;
+      availableIdentities: Array<{ id: string; name: string; role: string }>;
+    }) => Promise<{
+      name: string;
+      description: string;
+      stages: Array<{
+        type: WorkflowStageType; identityTemplateId: string | null;
+        inputDescription: string; outputDescription: string;
+      }>;
+    }>;
+    list: () => Promise<WorkflowTemplate[]>;
+    get: (id: string) => Promise<WorkflowTemplate | null>;
+    create: (data: Omit<WorkflowTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<WorkflowTemplate>;
+    update: (id: string, data: Partial<WorkflowTemplate>) => Promise<WorkflowTemplate>;
+    delete: (id: string) => Promise<void>;
+  };
+  pipeline: {
+    getRunForDirective: (directiveId: string) => Promise<PipelineRun | null>;
+    resumeHumanStage: (pipelineRunId: string, input: string) => Promise<void>;
+    onStageComplete: (callback: (data: { directiveId: string; stageIndex: number; total: number }) => void) => void;
   };
   analytics: {
     getRunMetrics: (runId: string) => Promise<RunMetrics | null>;
-    getAgentMetrics: (agentId: string) => Promise<AgentMetrics>;
+    getConscriptMetrics: (conscriptId: string) => Promise<ConscriptMetrics>;
     getSessionMetrics: (options?: { since?: string }) => Promise<SessionMetrics>;
     getTrend: (metric: string, options: { period: 'day' | 'week'; count: number }) => Promise<TrendPoint[]>;
     export: (options?: { since?: string }) => Promise<string>;
@@ -308,12 +471,15 @@ export interface SweatShopSettings {
     mergeStrategy: 'squash' | 'merge';
     workingDirectory: string;
   };
-  orgPool?: {
-    maxOrgs: number;
+  campPool?: {
+    maxCamps: number;
     scratchDefPath: string;
     defaultDurationDays: number;
     dataPlanPath?: string;
     permissionSets?: string[];
+    openPath?: string;
+    allowSharedCamps?: boolean;
+    maxConscriptsPerCamp?: number;
   };
 }
 

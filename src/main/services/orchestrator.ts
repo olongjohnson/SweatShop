@@ -1,11 +1,13 @@
 import { EventEmitter } from 'events';
 import { BrowserWindow } from 'electron';
-import { TicketQueue, buildExecutionPlan } from './ticket-queue';
-import { refineTicket } from './prompt-refiner';
-import { agentManager } from './agent-manager';
+import { DirectiveQueue, buildExecutionPlan } from './ticket-queue';
+import { refineDirective } from './prompt-refiner';
+import { conscriptManager } from './agent-manager';
 import * as dbService from './database';
+import { getSettings } from './settings';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
-import type { Ticket, Agent } from '../../shared/types';
+import { pipelineExecutor } from './pipeline-executor';
+import type { Directive, Conscript } from '../../shared/types';
 
 export interface OrchestratorStatus {
   running: boolean;
@@ -16,20 +18,20 @@ export interface OrchestratorStatus {
 }
 
 class OrchestratorService extends EventEmitter {
-  private queue = new TicketQueue();
+  private queue = new DirectiveQueue();
   private running = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
-   * Load tickets into the work queue.
+   * Load directives into the work queue.
    */
-  async loadTickets(ticketIds: string[]): Promise<void> {
-    const tickets: Ticket[] = [];
-    for (const id of ticketIds) {
-      const ticket = dbService.getTicket(id);
-      if (ticket) tickets.push(ticket);
+  async loadDirectives(directiveIds: string[]): Promise<void> {
+    const directives: Directive[] = [];
+    for (const id of directiveIds) {
+      const directive = dbService.getDirective(id);
+      if (directive) directives.push(directive);
     }
-    this.queue.enqueue(tickets);
+    this.queue.enqueue(directives);
     this.broadcastProgress();
   }
 
@@ -67,10 +69,10 @@ class OrchestratorService extends EventEmitter {
   }
 
   /**
-   * Called when an agent completes (merged) or fails.
+   * Called when a conscript completes (merged) or fails.
    */
-  onTicketCompleted(ticketId: string): void {
-    this.queue.markCompleted(ticketId);
+  onDirectiveCompleted(directiveId: string): void {
+    this.queue.markCompleted(directiveId);
     this.broadcastProgress();
 
     // If still running and queue not empty, try to dispatch more
@@ -86,62 +88,74 @@ class OrchestratorService extends EventEmitter {
   }
 
   /**
-   * Main dispatch loop — tries to assign ready tickets to idle agents.
+   * Main dispatch loop — tries to assign ready directives to idle conscripts.
    */
   private async dispatchLoop(): Promise<void> {
     if (!this.running) return;
 
     let dispatched = false;
 
-    // Keep dispatching as long as there are tickets and agents available
+    // Keep dispatching as long as there are directives and conscripts available
     while (this.running) {
-      const ticket = this.queue.dequeue();
-      if (!ticket) break;
+      const directive = this.queue.dequeue();
+      if (!directive) break;
 
-      const idleAgent = this.findIdleAgent();
-      if (!idleAgent) break;
+      const idleConscript = this.findIdleConscript();
+      if (!idleConscript) break;
 
       try {
-        await this.dispatch(ticket, idleAgent);
+        await this.dispatch(directive, idleConscript);
         dispatched = true;
       } catch (err) {
-        console.error(`[Orchestrator] Failed to dispatch ticket ${ticket.id}:`, err);
+        console.error(`[Orchestrator] Failed to dispatch directive ${directive.id}:`, err);
         // Put it back by not marking it dispatched
         break;
       }
     }
 
-    // If we couldn't dispatch (no agents/tickets), poll again in a few seconds
+    // If we couldn't dispatch (no conscripts/directives), poll again in a few seconds
     if (this.running && !this.queue.isEmpty()) {
       this.pollTimer = setTimeout(() => this.dispatchLoop(), 5000);
     }
   }
 
   /**
-   * Assign a single ticket to an agent.
+   * Assign a single directive to a conscript.
+   * If the directive has a workflowTemplateId, routes through the pipeline executor.
    */
-  private async dispatch(ticket: Ticket, agent: Agent): Promise<void> {
-    this.queue.markDispatched(ticket.id);
+  private async dispatch(directive: Directive, conscript: Conscript): Promise<void> {
+    this.queue.markDispatched(directive.id);
 
-    // Create branch name from ticket title
-    const branchName = `feature/${ticket.id}-${ticket.title
+    const settings = getSettings();
+    const workingDirectory = settings.git?.workingDirectory || '';
+
+    // Pipeline dispatch — run through workflow stages
+    if (directive.workflowTemplateId) {
+      const workflow = dbService.getWorkflowTemplate(directive.workflowTemplateId);
+      if (workflow) {
+        pipelineExecutor.execute(directive, workflow, conscript.id, workingDirectory)
+          .then(() => this.onDirectiveCompleted(directive.id))
+          .catch((err) => {
+            console.error(`[Orchestrator] Pipeline failed for directive ${directive.id}:`, err);
+            this.onDirectiveCompleted(directive.id);
+          });
+        this.broadcastProgress();
+        return;
+      }
+    }
+
+    // Default dispatch — existing behavior (refineDirective → assignDirective)
+    const branchName = `feature/${directive.id}-${directive.title
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
       .slice(0, 40)}`;
 
-    // Refine the ticket into an actionable prompt
-    const refinedPrompt = await refineTicket(ticket);
+    const refinedPrompt = await refineDirective(directive);
+    const campAlias = 'default';
 
-    // Use a stub working directory (will come from org pool in prompt 11)
-    const workingDirectory = process.cwd();
-
-    // Use a stub org alias (will come from org pool in prompt 11)
-    const orgAlias = 'default';
-
-    // Assign to agent
-    await agentManager.assignTicket(agent.id, ticket.id, {
-      orgAlias,
+    await conscriptManager.assignDirective(conscript.id, directive.id, {
+      campAlias,
       branchName,
       refinedPrompt,
       workingDirectory,
@@ -151,11 +165,11 @@ class OrchestratorService extends EventEmitter {
   }
 
   /**
-   * Find an idle agent.
+   * Find an idle conscript.
    */
-  private findIdleAgent(): Agent | null {
-    const agents = dbService.listAgents();
-    return agents.find((a) => a.status === 'IDLE') ?? null;
+  private findIdleConscript(): Conscript | null {
+    const conscripts = dbService.listConscripts();
+    return conscripts.find((a) => a.status === 'IDLE') ?? null;
   }
 
   /**

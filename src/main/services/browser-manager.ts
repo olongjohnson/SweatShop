@@ -24,6 +24,15 @@ function isAllowedURL(url: string): boolean {
   }
 }
 
+function isLocalDevURL(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
 class BrowserManager {
   private views = new Map<string, WebContentsView>();
   private mainWindow: BrowserWindow | null = null;
@@ -32,13 +41,13 @@ class BrowserManager {
     this.mainWindow = win;
   }
 
-  create(agentId: string): void {
-    if (this.views.has(agentId)) return;
+  create(conscriptId: string): void {
+    if (this.views.has(conscriptId)) return;
     if (!this.mainWindow) return;
 
     const view = new WebContentsView({
       webPreferences: {
-        partition: `persist:agent-${agentId}`,
+        partition: `persist:conscript-${conscriptId}`,
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
@@ -60,23 +69,60 @@ class BrowserManager {
       return { action: 'deny' };
     });
 
-    this.views.set(agentId, view);
+    this.views.set(conscriptId, view);
   }
 
-  loadURL(agentId: string, url: string): void {
-    const view = this.views.get(agentId);
+  createLocalPreview(viewId: string): void {
+    if (this.views.has(viewId)) return;
+    if (!this.mainWindow) return;
+
+    const view = new WebContentsView({
+      webPreferences: {
+        partition: `persist:lwc-preview-${viewId}`,
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+      },
+    });
+
+    // Restrict to localhost only
+    view.webContents.on('will-navigate', (event, url) => {
+      if (!isLocalDevURL(url)) {
+        event.preventDefault();
+      }
+    });
+
+    view.webContents.setWindowOpenHandler(({ url }) => {
+      if (isLocalDevURL(url)) {
+        return { action: 'allow' };
+      }
+      return { action: 'deny' };
+    });
+
+    this.views.set(viewId, view);
+  }
+
+  loadLocalURL(viewId: string, url: string): void {
+    const view = this.views.get(viewId);
+    if (!view) return;
+    if (!isLocalDevURL(url)) return;
+    view.webContents.loadURL(url);
+  }
+
+  loadURL(conscriptId: string, url: string): void {
+    const view = this.views.get(conscriptId);
     if (!view) return;
     if (!isAllowedURL(url)) return;
     view.webContents.loadURL(url);
   }
 
-  show(agentId: string, bounds: ViewBounds): void {
+  show(conscriptId: string, bounds: ViewBounds): void {
     if (!this.mainWindow) return;
 
     // Hide all first
     this.hideAll();
 
-    const view = this.views.get(agentId);
+    const view = this.views.get(conscriptId);
     if (!view) return;
 
     this.mainWindow.contentView.addChildView(view);
@@ -88,8 +134,8 @@ class BrowserManager {
     });
   }
 
-  setBounds(agentId: string, bounds: ViewBounds): void {
-    const view = this.views.get(agentId);
+  setBounds(conscriptId: string, bounds: ViewBounds): void {
+    const view = this.views.get(conscriptId);
     if (!view) return;
     view.setBounds({
       x: Math.round(bounds.x),
@@ -110,32 +156,32 @@ class BrowserManager {
     }
   }
 
-  goBack(agentId: string): void {
-    const view = this.views.get(agentId);
+  goBack(conscriptId: string): void {
+    const view = this.views.get(conscriptId);
     if (view?.webContents.canGoBack()) {
       view.webContents.goBack();
     }
   }
 
-  goForward(agentId: string): void {
-    const view = this.views.get(agentId);
+  goForward(conscriptId: string): void {
+    const view = this.views.get(conscriptId);
     if (view?.webContents.canGoForward()) {
       view.webContents.goForward();
     }
   }
 
-  reload(agentId: string): void {
-    const view = this.views.get(agentId);
+  reload(conscriptId: string): void {
+    const view = this.views.get(conscriptId);
     if (view) view.webContents.reload();
   }
 
-  getURL(agentId: string): string {
-    const view = this.views.get(agentId);
+  getURL(conscriptId: string): string {
+    const view = this.views.get(conscriptId);
     return view?.webContents.getURL() ?? '';
   }
 
-  destroy(agentId: string): void {
-    const view = this.views.get(agentId);
+  destroy(conscriptId: string): void {
+    const view = this.views.get(conscriptId);
     if (!view) return;
 
     if (this.mainWindow) {
@@ -144,7 +190,7 @@ class BrowserManager {
       } catch { /* not attached */ }
     }
     // WebContentsView cleanup handled by GC
-    this.views.delete(agentId);
+    this.views.delete(conscriptId);
   }
 }
 

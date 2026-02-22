@@ -5,6 +5,7 @@ import { initDatabase, closeDatabase } from './services/database';
 import { initSettings } from './services/settings';
 import { registerIpcHandlers } from './ipc-handlers';
 import { browserManager } from './services/browser-manager';
+import { lwcPreview } from './services/lwc-preview';
 
 // Allow SDK to spawn claude CLI (blocks nested sessions if CLAUDECODE is set)
 delete process.env.CLAUDECODE;
@@ -14,6 +15,20 @@ app.setPath('userData', path.join(os.homedir(), '.sweatshop'));
 
 // SWEATSHOP_DEV=1 is set by the `dev` script. `start` and `build` use the built files.
 const isDev = process.env.SWEATSHOP_DEV === '1';
+
+// Single-instance lock — focus existing window if a second instance launches
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const wins = BrowserWindow.getAllWindows();
+    if (wins.length > 0) {
+      if (wins[0].isMinimized()) wins[0].restore();
+      wins[0].focus();
+    }
+  });
+}
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -63,5 +78,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  lwcPreview.stopAll();
   closeDatabase();
 });

@@ -9,10 +9,10 @@ interface FileInfo {
 }
 
 interface DiffViewProps {
-  agentId: string;
+  conscriptId: string;
 }
 
-export default function DiffView({ agentId }: DiffViewProps) {
+export default function DiffView({ conscriptId }: DiffViewProps) {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [summary, setSummary] = useState({ filesChanged: 0, insertions: 0, deletions: 0 });
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -26,8 +26,8 @@ export default function DiffView({ agentId }: DiffViewProps) {
       setLoading(true);
       try {
         const [fileList, diffSummary] = await Promise.all([
-          window.sweatshop.git.getFilesWithStats(agentId),
-          window.sweatshop.git.getDiffSummary(agentId),
+          window.sweatshop.git.getFilesWithStats(conscriptId),
+          window.sweatshop.git.getDiffSummary(conscriptId),
         ]);
         setFiles(fileList);
         setSummary(diffSummary);
@@ -43,7 +43,7 @@ export default function DiffView({ agentId }: DiffViewProps) {
       }
     };
     load();
-  }, [agentId]);
+  }, [conscriptId]);
 
   // Load diff for selected file
   useEffect(() => {
@@ -53,7 +53,7 @@ export default function DiffView({ agentId }: DiffViewProps) {
     }
     const loadDiff = async () => {
       try {
-        const raw = await window.sweatshop.git.getFileDiff(agentId, selectedFile);
+        const raw = await window.sweatshop.git.getFileDiff(conscriptId, selectedFile);
         if (!raw) {
           setDiffHtml('<div class="diff-empty">No changes</div>');
           return;
@@ -70,13 +70,13 @@ export default function DiffView({ agentId }: DiffViewProps) {
       }
     };
     loadDiff();
-  }, [agentId, selectedFile, viewMode]);
+  }, [conscriptId, selectedFile, viewMode]);
 
   // Show all files diff
   const showFullDiff = useCallback(async () => {
     setSelectedFile(null);
     try {
-      const raw = await window.sweatshop.git.getFullDiff(agentId);
+      const raw = await window.sweatshop.git.getFullDiff(conscriptId);
       if (!raw) {
         setDiffHtml('<div class="diff-empty">No changes found</div>');
         return;
@@ -90,7 +90,7 @@ export default function DiffView({ agentId }: DiffViewProps) {
     } catch (err) {
       setDiffHtml('<div class="diff-error">Failed to load diff</div>');
     }
-  }, [agentId, viewMode]);
+  }, [conscriptId, viewMode]);
 
   const getFileExtension = (path: string) => {
     const parts = path.split('.');
@@ -120,7 +120,7 @@ export default function DiffView({ agentId }: DiffViewProps) {
       <div className="diff-view">
         <div className="diff-empty-state">
           <h3>No changes detected</h3>
-          <p>The agent hasn't made any file changes on its branch yet.</p>
+          <p>The conscript hasn't made any file changes on its branch yet.</p>
         </div>
       </div>
     );

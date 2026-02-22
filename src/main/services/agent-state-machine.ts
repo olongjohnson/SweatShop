@@ -1,6 +1,6 @@
-import type { AgentStatus } from '../../shared/types';
+import type { ConscriptStatus } from '../../shared/types';
 
-const VALID_TRANSITIONS: Record<AgentStatus, AgentStatus[]> = {
+const VALID_TRANSITIONS: Record<ConscriptStatus, ConscriptStatus[]> = {
   IDLE:         ['ASSIGNED'],
   ASSIGNED:     ['BRANCHING', 'ERROR'],
   BRANCHING:    ['DEVELOPING', 'ERROR'],
@@ -13,22 +13,22 @@ const VALID_TRANSITIONS: Record<AgentStatus, AgentStatus[]> = {
   ERROR:        ['IDLE', 'DEVELOPING', 'PROVISIONING'],
 };
 
-export function canTransition(current: AgentStatus, next: AgentStatus): boolean {
+export function canTransition(current: ConscriptStatus, next: ConscriptStatus): boolean {
   return VALID_TRANSITIONS[current]?.includes(next) ?? false;
 }
 
-export function assertTransition(current: AgentStatus, next: AgentStatus): void {
+export function assertTransition(current: ConscriptStatus, next: ConscriptStatus): void {
   if (!canTransition(current, next)) {
-    throw new Error(`Invalid agent state transition: ${current} → ${next}`);
+    throw new Error(`Invalid conscript state transition: ${current} → ${next}`);
   }
 }
 
 /** States that require human attention */
-export function isInterruptState(status: AgentStatus): boolean {
+export function isInterruptState(status: ConscriptStatus): boolean {
   return status === 'QA_READY' || status === 'NEEDS_INPUT' || status === 'ERROR';
 }
 
-/** States where the agent is actively working */
-export function isActiveState(status: AgentStatus): boolean {
+/** States where the conscript is actively working */
+export function isActiveState(status: ConscriptStatus): boolean {
   return status === 'DEVELOPING' || status === 'PROVISIONING' || status === 'BRANCHING' || status === 'REWORK';
 }

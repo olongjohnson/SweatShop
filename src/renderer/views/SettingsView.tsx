@@ -1,58 +1,87 @@
 import React, { useState, useEffect } from 'react';
 import type { SweatShopSettings } from '../../shared/types';
 
+type AuthState = 'checking' | 'authenticated' | 'unauthenticated' | 'logging-in' | 'error';
+
 export default function SettingsView() {
   const [settings, setSettings] = useState<SweatShopSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Claude Code auth
-  const [authStatus, setAuthStatus] = useState<{
-    authenticated: boolean;
-    method: string;
-    error?: string;
-  } | null>(null);
-  const [authChecking, setAuthChecking] = useState(false);
+  // Auth
+  const [authState, setAuthState] = useState<AuthState>('checking');
+  const [authLabel, setAuthLabel] = useState('');
+  const [authError, setAuthError] = useState('');
 
-  // Local form state
+  // Form state
   const [baseBranch, setBaseBranch] = useState('main');
   const [mergeStrategy, setMergeStrategy] = useState<'squash' | 'merge'>('squash');
   const [workingDirectory, setWorkingDirectory] = useState('');
-  const [maxOrgs, setMaxOrgs] = useState(4);
-  const [scratchDefPath, setScratchDefPath] = useState('config/project-scratch-def.json');
-  const [defaultDuration, setDefaultDuration] = useState(7);
   const [dmInstanceUrl, setDmInstanceUrl] = useState('');
   const [dmObjectName, setDmObjectName] = useState('');
   const [dmAccessToken, setDmAccessToken] = useState('');
+  const [dmTesting, setDmTesting] = useState(false);
+  const [dmTestResult, setDmTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Camp Pool
+  const [allowSharedCamps, setAllowSharedCamps] = useState(false);
+  const [maxConscriptsPerCamp, setMaxConscriptsPerCamp] = useState(3);
+
+  const refreshAuth = async () => {
+    try {
+      const status = await window.sweatshop.claude.authStatus();
+      if (status.authenticated) {
+        setAuthState('authenticated');
+        setAuthLabel(status.method);
+        setAuthError('');
+      } else {
+        setAuthState('unauthenticated');
+        setAuthLabel('');
+        setAuthError('');
+      }
+    } catch {
+      setAuthState('error');
+      setAuthError('Could not check authentication status.');
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
-      const [s, auth] = await Promise.all([
+      const [s] = await Promise.all([
         window.sweatshop.settings.get(),
-        window.sweatshop.claude.authStatus(),
+        refreshAuth(),
       ]);
       setSettings(s);
-      setAuthStatus(auth);
       setBaseBranch(s.git?.baseBranch || 'main');
       setMergeStrategy(s.git?.mergeStrategy || 'squash');
       setWorkingDirectory(s.git?.workingDirectory || '');
-      setMaxOrgs(s.orgPool?.maxOrgs ?? 4);
-      setScratchDefPath(s.orgPool?.scratchDefPath || 'config/project-scratch-def.json');
-      setDefaultDuration(s.orgPool?.defaultDurationDays ?? 7);
       setDmInstanceUrl(s.deathmark?.instanceUrl || '');
       setDmObjectName(s.deathmark?.objectName || '');
       setDmAccessToken(s.deathmark?.accessToken || '');
+      setAllowSharedCamps(s.campPool?.allowSharedCamps ?? false);
+      setMaxConscriptsPerCamp(s.campPool?.maxConscriptsPerCamp ?? 3);
     };
     load();
   }, []);
 
-  const handleCheckAuth = async () => {
-    setAuthChecking(true);
-    try {
-      const status = await window.sweatshop.claude.authStatus();
-      setAuthStatus(status);
-    } finally {
-      setAuthChecking(false);
+  // Listen for login output (just to detect completion)
+  useEffect(() => {
+    window.sweatshop.claude.onLoginOutput((data) => {
+      if (data.done) {
+        refreshAuth();
+      }
+    });
+  }, []);
+
+  const handleLogin = async () => {
+    setAuthState('logging-in');
+    setAuthError('');
+    const result = await window.sweatshop.claude.login();
+    if (!result.success) {
+      setAuthState('error');
+      setAuthError(result.error || 'Login failed. Please try again.');
+    } else {
+      await refreshAuth();
     }
   };
 
@@ -61,16 +90,7 @@ export default function SettingsView() {
     setSaved(false);
     try {
       const updated = await window.sweatshop.settings.update({
-        git: {
-          baseBranch,
-          mergeStrategy,
-          workingDirectory,
-        },
-        orgPool: {
-          maxOrgs,
-          scratchDefPath,
-          defaultDurationDays: defaultDuration,
-        },
+        git: { baseBranch, mergeStrategy, workingDirectory },
         deathmark: dmInstanceUrl ? {
           instanceUrl: dmInstanceUrl,
           objectName: dmObjectName || 'Case',
@@ -84,6 +104,14 @@ export default function SettingsView() {
             labels: 'Labels__c',
           },
         } : undefined,
+        campPool: {
+          ...settings?.campPool,
+          maxCamps: settings?.campPool?.maxCamps ?? 4,
+          scratchDefPath: settings?.campPool?.scratchDefPath ?? 'config/project-scratch-def.json',
+          defaultDurationDays: settings?.campPool?.defaultDurationDays ?? 7,
+          allowSharedCamps,
+          maxConscriptsPerCamp,
+        },
       });
       setSettings(updated);
       setSaved(true);
@@ -93,12 +121,22 @@ export default function SettingsView() {
     }
   };
 
+  const handleBrowseDirectory = async () => {
+    const dir = await window.sweatshop.settings.pickDirectory();
+    if (dir) setWorkingDirectory(dir);
+  };
+
   const handleTestDeathmark = async () => {
+    setDmTesting(true);
+    setDmTestResult(null);
     try {
       await window.sweatshop.deathmark.testConnection();
-      alert('Connection successful!');
+      setDmTestResult({ ok: true, msg: 'Connected successfully' });
     } catch (err: any) {
-      alert(`Connection failed: ${err.message || err}`);
+      setDmTestResult({ ok: false, msg: err.message || 'Connection failed' });
+    } finally {
+      setDmTesting(false);
+      setTimeout(() => setDmTestResult(null), 5000);
     }
   };
 
@@ -123,53 +161,83 @@ export default function SettingsView() {
       </div>
 
       <div className="settings-body">
-        {/* Claude Code Auth Section */}
+        {/* ── Authentication ── */}
         <div className="settings-section">
-          <div className="settings-section-title">Claude Code</div>
+          <div className="settings-section-title">Authentication</div>
           <div className="settings-section-desc">
-            Agents use Claude Code CLI for authentication. Run <code>claude login</code> in your terminal to authenticate.
+            Sign in with your Anthropic account to enable conscripts.
           </div>
-          <div className="settings-auth-status">
-            <div className={`settings-auth-indicator ${authStatus?.authenticated ? 'connected' : 'disconnected'}`}>
-              <span className="settings-auth-dot" />
-              <span className="settings-auth-text">
-                {authStatus === null
-                  ? 'Checking...'
-                  : authStatus.authenticated
-                    ? `Authenticated via ${authStatus.method}`
-                    : authStatus.error || 'Not authenticated'}
+
+          {authState === 'checking' && (
+            <div className="settings-auth-card">
+              <div className="settings-auth-login-spinner" />
+              <span className="settings-auth-card-text">Checking authentication...</span>
+            </div>
+          )}
+
+          {authState === 'authenticated' && (
+            <div className="settings-auth-card settings-auth-card--ok">
+              <span className="settings-auth-dot settings-auth-dot--ok" />
+              <span className="settings-auth-card-text">
+                Signed in &mdash; {authLabel}
               </span>
             </div>
-            <button
-              className="btn-secondary"
-              onClick={handleCheckAuth}
-              disabled={authChecking}
-            >
-              {authChecking ? 'Checking...' : 'Refresh Status'}
-            </button>
-          </div>
-          {authStatus && !authStatus.authenticated && (
-            <div className="settings-auth-help">
-              Open a terminal and run: <code>claude login</code>
+          )}
+
+          {authState === 'unauthenticated' && (
+            <>
+              <div className="settings-auth-card settings-auth-card--warn">
+                <span className="settings-auth-dot settings-auth-dot--warn" />
+                <span className="settings-auth-card-text">Not signed in</span>
+              </div>
+              <button className="settings-auth-login-btn" onClick={handleLogin}>
+                Sign in with Claude
+              </button>
+            </>
+          )}
+
+          {authState === 'logging-in' && (
+            <div className="settings-auth-card">
+              <div className="settings-auth-login-spinner" />
+              <span className="settings-auth-card-text">
+                Complete sign-in in your browser...
+              </span>
             </div>
+          )}
+
+          {authState === 'error' && (
+            <>
+              <div className="settings-auth-card settings-auth-card--error">
+                <span className="settings-auth-dot settings-auth-dot--error" />
+                <span className="settings-auth-card-text">{authError}</span>
+              </div>
+              <button className="settings-auth-login-btn" onClick={handleLogin}>
+                Try Again
+              </button>
+            </>
           )}
         </div>
 
-        {/* Git Section */}
+        {/* ── Project ── */}
         <div className="settings-section">
-          <div className="settings-section-title">Git</div>
+          <div className="settings-section-title">Project</div>
           <div className="settings-section-desc">
-            Controls how agents create branches and merge work.
+            Point to your Salesforce project so conscripts know where to work.
           </div>
           <label className="settings-field">
             <span className="settings-label">Working Directory</span>
-            <input
-              type="text"
-              value={workingDirectory}
-              onChange={(e) => setWorkingDirectory(e.target.value)}
-              placeholder="/path/to/salesforce/project"
-              className="settings-input"
-            />
+            <div className="settings-input-row">
+              <input
+                type="text"
+                value={workingDirectory}
+                onChange={(e) => setWorkingDirectory(e.target.value)}
+                placeholder="/path/to/your/salesforce/project"
+                className={`settings-input ${!workingDirectory ? 'settings-input--error' : ''}`}
+              />
+              <button className="btn-browse" onClick={handleBrowseDirectory}>
+                Browse
+              </button>
+            </div>
           </label>
           <div className="settings-field-row">
             <label className="settings-field">
@@ -196,53 +264,11 @@ export default function SettingsView() {
           </div>
         </div>
 
-        {/* Org Pool Section */}
+        {/* ── Salesforce Sync ── */}
         <div className="settings-section">
-          <div className="settings-section-title">Scratch Org Pool</div>
+          <div className="settings-section-title">Salesforce Sync</div>
           <div className="settings-section-desc">
-            Manage Salesforce scratch orgs for agent testing.
-          </div>
-          <div className="settings-field-row">
-            <label className="settings-field">
-              <span className="settings-label">Max Orgs</span>
-              <input
-                type="number"
-                value={maxOrgs}
-                onChange={(e) => setMaxOrgs(parseInt(e.target.value) || 1)}
-                min={1}
-                max={20}
-                className="settings-input"
-              />
-            </label>
-            <label className="settings-field">
-              <span className="settings-label">Duration (days)</span>
-              <input
-                type="number"
-                value={defaultDuration}
-                onChange={(e) => setDefaultDuration(parseInt(e.target.value) || 1)}
-                min={1}
-                max={30}
-                className="settings-input"
-              />
-            </label>
-          </div>
-          <label className="settings-field">
-            <span className="settings-label">Scratch Def Path</span>
-            <input
-              type="text"
-              value={scratchDefPath}
-              onChange={(e) => setScratchDefPath(e.target.value)}
-              placeholder="config/project-scratch-def.json"
-              className="settings-input"
-            />
-          </label>
-        </div>
-
-        {/* Deathmark Section */}
-        <div className="settings-section">
-          <div className="settings-section-title">Deathmark (Salesforce Sync)</div>
-          <div className="settings-section-desc">
-            Connect to a Salesforce org to sync tickets automatically.
+            Pull directives directly from a Salesforce camp.
           </div>
           <label className="settings-field">
             <span className="settings-label">Instance URL</span>
@@ -277,9 +303,54 @@ export default function SettingsView() {
             </label>
           </div>
           {dmInstanceUrl && (
-            <button className="btn-secondary" onClick={handleTestDeathmark}>
-              Test Connection
-            </button>
+            <div className="settings-test-row">
+              <button
+                className="btn-secondary"
+                onClick={handleTestDeathmark}
+                disabled={dmTesting}
+              >
+                {dmTesting ? 'Testing...' : 'Test Connection'}
+              </button>
+              {dmTestResult && (
+                <span className={`settings-test-result ${dmTestResult.ok ? 'settings-test-ok' : 'settings-test-fail'}`}>
+                  {dmTestResult.msg}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Camp Pool ── */}
+        <div className="settings-section">
+          <div className="settings-section-title">Camp Pool</div>
+          <div className="settings-section-desc">
+            Configure how scratch orgs are shared between conscripts.
+          </div>
+          <label className="settings-field settings-field--checkbox">
+            <input
+              type="checkbox"
+              checked={allowSharedCamps}
+              onChange={(e) => setAllowSharedCamps(e.target.checked)}
+            />
+            <div>
+              <span className="settings-label">Allow shared camps</span>
+              <span className="settings-hint">
+                Multiple conscripts can work in the same scratch org simultaneously.
+              </span>
+            </div>
+          </label>
+          {allowSharedCamps && (
+            <label className="settings-field">
+              <span className="settings-label">Max conscripts per camp</span>
+              <input
+                type="number"
+                min="2"
+                max="10"
+                value={maxConscriptsPerCamp}
+                onChange={(e) => setMaxConscriptsPerCamp(parseInt(e.target.value) || 3)}
+                className="settings-input settings-input--narrow"
+              />
+            </label>
           )}
         </div>
       </div>

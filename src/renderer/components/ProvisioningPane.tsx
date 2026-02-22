@@ -13,7 +13,7 @@ export default function ProvisioningPane({ onComplete }: ProvisioningPaneProps) 
 
   // Subscribe to provision output
   useEffect(() => {
-    window.sweatshop.orgs.onProvisionOutput((data) => {
+    window.sweatshop.camps.onProvisionOutput((data) => {
       setOutput((prev) => [...prev, data.data]);
     });
   }, []);
@@ -30,10 +30,10 @@ export default function ProvisioningPane({ onComplete }: ProvisioningPaneProps) 
     setOutput([]);
     setResult(null);
 
-    const org = await window.sweatshop.orgs.createScratch(alias || undefined);
+    const camp = await window.sweatshop.camps.createScratch(alias || undefined);
 
-    if (org) {
-      setResult({ success: true, loginUrl: org.loginUrl });
+    if (camp) {
+      setResult({ success: true, loginUrl: camp.loginUrl });
     } else {
       setResult({ success: false });
     }
@@ -49,24 +49,24 @@ export default function ProvisioningPane({ onComplete }: ProvisioningPaneProps) 
   return (
     <div className="provisioning-pane">
       <div className="provisioning-header">
-        <h3>Scratch Org Provisioning</h3>
-        <p>Create and configure a new Salesforce scratch org</p>
+        <h3>Camp Provisioning</h3>
+        <p>Create and configure a new Salesforce camp</p>
       </div>
 
       {!running && !result && (
         <div className="provisioning-form">
           <div className="provisioning-field">
-            <label>Org Alias (optional)</label>
+            <label>Camp Alias (optional)</label>
             <input
               type="text"
               value={alias}
               onChange={(e) => setAlias(e.target.value)}
-              placeholder="e.g. my-scratch-org"
+              placeholder="e.g. my-camp"
               className="settings-input"
             />
           </div>
           <button className="btn-primary" onClick={handleCreate}>
-            Create Scratch Org
+            Create Camp
           </button>
         </div>
       )}
@@ -82,7 +82,7 @@ export default function ProvisioningPane({ onComplete }: ProvisioningPaneProps) 
       {running && (
         <div className="provisioning-status">
           <div className="working-indicator" />
-          <span>Creating scratch org... this may take a few minutes</span>
+          <span>Creating camp... this may take a few minutes</span>
         </div>
       )}
 
@@ -90,7 +90,7 @@ export default function ProvisioningPane({ onComplete }: ProvisioningPaneProps) 
         <div className={`provisioning-result ${result.success ? 'success' : 'error'}`}>
           {result.success ? (
             <>
-              <span>Scratch org created successfully!</span>
+              <span>Camp created successfully!</span>
               {result.loginUrl && (
                 <button className="btn-primary" onClick={handleOpenOrg}>
                   Open in Browser
@@ -102,7 +102,7 @@ export default function ProvisioningPane({ onComplete }: ProvisioningPaneProps) 
             </>
           ) : (
             <>
-              <span>Failed to create scratch org. Check the output above.</span>
+              <span>Failed to create camp. Check the output above.</span>
               <button className="btn-secondary" onClick={() => { setResult(null); setOutput([]); }}>
                 Try Again
               </button>

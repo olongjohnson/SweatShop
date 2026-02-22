@@ -4,8 +4,8 @@ import { getSettings } from './settings';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 
 interface ProvisionConfig {
-  agentId: string;
-  orgAlias: string;
+  conscriptId: string;
+  campAlias: string;
   worktreePath: string;
 }
 
@@ -15,7 +15,7 @@ interface ProvisionResult {
   errors?: string[];
 }
 
-function runCommand(command: string, cwd: string, agentId: string): Promise<{ success: boolean; stdout: string; stderr: string }> {
+function runCommand(command: string, cwd: string, conscriptId: string): Promise<{ success: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = exec(command, { cwd, timeout: 600000, maxBuffer: 10 * 1024 * 1024 });
 
@@ -25,7 +25,7 @@ function runCommand(command: string, cwd: string, agentId: string): Promise<{ su
     // Stream output to terminal
     const broadcast = (data: string) => {
       for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send(IPC_CHANNELS.AGENT_TERMINAL_DATA, { agentId, data });
+        win.webContents.send(IPC_CHANNELS.CONSCRIPT_TERMINAL_DATA, { conscriptId, data });
       }
     };
 
@@ -56,25 +56,25 @@ export class ProvisioningService {
 
     const broadcast = (msg: string) => {
       for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send(IPC_CHANNELS.AGENT_TERMINAL_DATA, {
-          agentId: config.agentId,
+        win.webContents.send(IPC_CHANNELS.CONSCRIPT_TERMINAL_DATA, {
+          conscriptId: config.conscriptId,
           data: `\r\n[Provisioning] ${msg}\r\n`,
         });
       }
     };
 
     // Step 1: Deploy source
-    broadcast(`Deploying source to ${config.orgAlias}...`);
-    const deploy = await this.deploySource(config.orgAlias, config.worktreePath, config.agentId);
+    broadcast(`Deploying source to ${config.campAlias}...`);
+    const deploy = await this.deploySource(config.campAlias, config.worktreePath, config.conscriptId);
     if (!deploy) {
       return { success: false, errors: ['Source deploy failed'] };
     }
 
     // Step 2: Load test data (non-fatal)
-    const dataPlanPath = settings.orgPool?.dataPlanPath;
+    const dataPlanPath = settings.campPool?.dataPlanPath;
     if (dataPlanPath) {
       broadcast('Loading test data...');
-      const dataOk = await this.loadTestData(config.orgAlias, dataPlanPath, config.worktreePath, config.agentId);
+      const dataOk = await this.loadTestData(config.campAlias, dataPlanPath, config.worktreePath, config.conscriptId);
       if (!dataOk) {
         errors.push('Test data load failed (non-fatal)');
         broadcast('Warning: test data load failed, continuing...');
@@ -82,10 +82,10 @@ export class ProvisioningService {
     }
 
     // Step 3: Assign permission sets (non-fatal)
-    const permsets = settings.orgPool?.permissionSets;
+    const permsets = settings.campPool?.permissionSets;
     if (permsets && permsets.length > 0) {
       broadcast('Assigning permission sets...');
-      const permOk = await this.assignPermissionSets(config.orgAlias, permsets, config.worktreePath, config.agentId);
+      const permOk = await this.assignPermissionSets(config.campAlias, permsets, config.worktreePath, config.conscriptId);
       if (!permOk) {
         errors.push('Permission set assignment failed (non-fatal)');
         broadcast('Warning: permset assignment failed, continuing...');
@@ -94,7 +94,7 @@ export class ProvisioningService {
 
     // Step 4: Get login URL
     broadcast('Generating login URL...');
-    const loginUrl = await this.getLoginUrl(config.orgAlias, config.worktreePath, config.agentId);
+    const loginUrl = await this.getLoginUrl(config.campAlias, config.worktreePath, config.conscriptId);
     if (!loginUrl) {
       errors.push('Could not generate login URL');
     }
@@ -104,42 +104,42 @@ export class ProvisioningService {
     return { success: true, loginUrl: loginUrl || undefined, errors: errors.length > 0 ? errors : undefined };
   }
 
-  private async deploySource(orgAlias: string, worktreePath: string, agentId: string): Promise<boolean> {
+  private async deploySource(campAlias: string, worktreePath: string, conscriptId: string): Promise<boolean> {
     const result = await runCommand(
-      `sf project deploy start --target-org ${orgAlias} --source-dir force-app --ignore-conflicts`,
+      `sf project deploy start --target-org ${campAlias} --source-dir force-app --ignore-conflicts`,
       worktreePath,
-      agentId
+      conscriptId
     );
     return result.success;
   }
 
-  private async loadTestData(orgAlias: string, dataPlanPath: string, cwd: string, agentId: string): Promise<boolean> {
+  private async loadTestData(campAlias: string, dataPlanPath: string, cwd: string, conscriptId: string): Promise<boolean> {
     const result = await runCommand(
-      `sf data import tree --target-org ${orgAlias} -p ${dataPlanPath}`,
+      `sf data import tree --target-org ${campAlias} -p ${dataPlanPath}`,
       cwd,
-      agentId
+      conscriptId
     );
     return result.success;
   }
 
-  private async assignPermissionSets(orgAlias: string, permsets: string[], cwd: string, agentId: string): Promise<boolean> {
+  private async assignPermissionSets(campAlias: string, permsets: string[], cwd: string, conscriptId: string): Promise<boolean> {
     let allOk = true;
     for (const ps of permsets) {
       const result = await runCommand(
-        `sf org assign permset --target-org ${orgAlias} -n ${ps}`,
+        `sf org assign permset --target-org ${campAlias} -n ${ps}`,
         cwd,
-        agentId
+        conscriptId
       );
       if (!result.success) allOk = false;
     }
     return allOk;
   }
 
-  private async getLoginUrl(orgAlias: string, cwd: string, agentId: string): Promise<string | null> {
+  private async getLoginUrl(campAlias: string, cwd: string, conscriptId: string): Promise<string | null> {
     const result = await runCommand(
-      `sf org open --target-org ${orgAlias} --url-only -r`,
+      `sf org open --target-org ${campAlias} --url-only -r`,
       cwd,
-      agentId
+      conscriptId
     );
     if (result.success && result.stdout) {
       // Extract URL from output

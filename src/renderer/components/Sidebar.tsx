@@ -4,10 +4,10 @@ import ResizableDivider from './ResizableDivider';
 import TerminalPane from './TerminalPane';
 
 interface SidebarProps {
-  agentId: string | null;
+  conscriptId: string | null;
 }
 
-export default function Sidebar({ agentId }: SidebarProps) {
+export default function Sidebar({ conscriptId }: SidebarProps) {
   // Chat takes 55% of sidebar height by default
   const [chatRatio, setChatRatio] = useState(0.55);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -23,11 +23,11 @@ export default function Sidebar({ agentId }: SidebarProps) {
   return (
     <div className="sidebar" ref={sidebarRef}>
       <div style={{ flex: chatRatio, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <ChatPane agentId={agentId} />
+        <ChatPane conscriptId={conscriptId} />
       </div>
       <ResizableDivider direction="horizontal" onResize={handleVerticalResize} />
       <div style={{ flex: 1 - chatRatio, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <TerminalPane agentId={agentId} />
+        <TerminalPane conscriptId={conscriptId} />
       </div>
     </div>
   );

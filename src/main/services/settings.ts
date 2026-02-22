@@ -28,12 +28,15 @@ export interface SweatShopSettings {
     mergeStrategy: 'squash' | 'merge';
     workingDirectory: string;
   };
-  orgPool?: {
-    maxOrgs: number;
+  campPool?: {
+    maxCamps: number;
     scratchDefPath: string;
     defaultDurationDays: number;
     dataPlanPath?: string;
     permissionSets?: string[];
+    openPath?: string;
+    allowSharedCamps?: boolean;
+    maxConscriptsPerCamp?: number;
   };
 }
 
@@ -43,10 +46,12 @@ const DEFAULTS: SweatShopSettings = {
     mergeStrategy: 'squash',
     workingDirectory: '',
   },
-  orgPool: {
-    maxOrgs: 4,
+  campPool: {
+    maxCamps: 4,
     scratchDefPath: 'config/project-scratch-def.json',
     defaultDurationDays: 7,
+    allowSharedCamps: false,
+    maxConscriptsPerCamp: 3,
   },
 };
 

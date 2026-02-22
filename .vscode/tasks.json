@@ -3,28 +3,48 @@
   "tasks": [
     {
       "label": "SweatShop: Build & Launch",
-      "type": "npm",
-      "script": "start",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "silent",
-        "panel": "dedicated"
-      },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
-    },
-    {
-      "label": "SweatShop: Dev Mode",
-      "type": "npm",
-      "script": "dev",
+      "type": "shell",
+      "command": "/Users/aubreywalts/local/bin/npm run start",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
         "panel": "dedicated"
       },
-      "group": "build"
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "options": {
+        "env": {
+          "PATH": "/Users/aubreywalts/local/bin:${env:PATH}"
+        },
+        "statusbar": {
+          "label": "$(rocket) Launch",
+          "color": "#FFFFFF",
+          "detail": "Build and launch SweatShop"
+        }
+      }
+    },
+    {
+      "label": "SweatShop: Dev Mode",
+      "type": "shell",
+      "command": "/Users/aubreywalts/local/bin/npm run dev",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "group": "build",
+      "options": {
+        "env": {
+          "PATH": "/Users/aubreywalts/local/bin:${env:PATH}"
+        },
+        "statusbar": {
+          "label": "$(zap) Dev",
+          "color": "#FFFFFF",
+          "detail": "Start Vite dev server + Electron"
+        }
+      }
     }
   ]
 }

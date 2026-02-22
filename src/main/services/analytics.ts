@@ -1,5 +1,5 @@
 import * as dbService from './database';
-import type { TicketRun } from '../../shared/types';
+import type { DirectiveRun } from '../../shared/types';
 
 const DEFAULT_PRICING = {
   promptTokenRate: 15 / 1_000_000,
@@ -7,8 +7,8 @@ const DEFAULT_PRICING = {
 };
 
 export interface RunMetrics {
-  ticketId: string;
-  agentId: string;
+  directiveId: string;
+  conscriptId: string;
   status: string;
   startedAt: string;
   completedAt?: string;
@@ -23,11 +23,11 @@ export interface RunMetrics {
   autonomyScore: number;
 }
 
-export interface AgentMetrics {
-  agentId: string;
-  agentName: string;
-  ticketsCompleted: number;
-  avgInterventionsPerTicket: number;
+export interface ConscriptMetrics {
+  conscriptId: string;
+  conscriptName: string;
+  directivesCompleted: number;
+  avgInterventionsPerDirective: number;
   avgReworkRate: number;
   avgDurationMs: number;
   totalTokensUsed: number;
@@ -35,9 +35,9 @@ export interface AgentMetrics {
 }
 
 export interface SessionMetrics {
-  totalTickets: number;
-  completedTickets: number;
-  failedTickets: number;
+  totalDirectives: number;
+  completedDirectives: number;
+  failedDirectives: number;
   totalSessionTimeMs: number;
   totalHumanWaitTimeMs: number;
   totalActiveDevTimeMs: number;
@@ -48,7 +48,7 @@ export interface SessionMetrics {
   velocity: number;
   humanEfficiencyRatio: number;
   totalCostUsd: number;
-  costPerTicketUsd: number;
+  costPerDirectiveUsd: number;
 }
 
 export interface TrendPoint {
@@ -61,7 +61,7 @@ function computeCost(promptTokens: number, completionTokens: number): number {
     + completionTokens * DEFAULT_PRICING.completionTokenRate;
 }
 
-function computeRunMetrics(run: TicketRun): RunMetrics {
+function computeRunMetrics(run: DirectiveRun): RunMetrics {
   const startMs = new Date(run.startedAt).getTime();
   const endMs = run.completedAt ? new Date(run.completedAt).getTime() : Date.now();
   const wallClockDurationMs = endMs - startMs;
@@ -78,8 +78,8 @@ function computeRunMetrics(run: TicketRun): RunMetrics {
   const autonomyScore = Math.max(0, Math.round(100 - run.humanInterventionCount * 15));
 
   return {
-    ticketId: run.ticketId,
-    agentId: run.agentId,
+    directiveId: run.directiveId,
+    conscriptId: run.conscriptId,
     status: run.status,
     startedAt: run.startedAt,
     completedAt: run.completedAt,
@@ -112,9 +112,9 @@ class AnalyticsService {
     return computeRunMetrics(run);
   }
 
-  getAgentMetrics(agentId: string): AgentMetrics {
-    const agent = dbService.getAgent(agentId);
-    const runs = dbService.listRuns().filter((r) => r.agentId === agentId);
+  getConscriptMetrics(conscriptId: string): ConscriptMetrics {
+    const conscript = dbService.getConscript(conscriptId);
+    const runs = dbService.listRuns().filter((r) => r.conscriptId === conscriptId);
     const completed = runs.filter((r) => r.status === 'completed');
 
     const metrics = runs.map(computeRunMetrics);
@@ -124,10 +124,10 @@ class AnalyticsService {
     const totalCost = metrics.reduce((sum, m) => sum + m.estimatedCostUsd, 0);
 
     return {
-      agentId,
-      agentName: agent?.name || 'Unknown',
-      ticketsCompleted: completed.length,
-      avgInterventionsPerTicket: runs.length > 0
+      conscriptId,
+      conscriptName: conscript?.name || 'Unknown',
+      directivesCompleted: completed.length,
+      avgInterventionsPerDirective: runs.length > 0
         ? runs.reduce((s, r) => s + r.humanInterventionCount, 0) / runs.length
         : 0,
       avgReworkRate: runs.length > 0
@@ -167,7 +167,7 @@ class AnalyticsService {
       totalSessionTimeMs = Math.max(...ends) - Math.min(...starts);
     }
 
-    // First pass approval: completed tickets with 0 rework
+    // First pass approval: completed directives with 0 rework
     const firstPassCount = completed.filter((r) => r.reworkCount === 0).length;
     const firstPassApprovalRate = completed.length > 0
       ? firstPassCount / completed.length
@@ -178,7 +178,7 @@ class AnalyticsService {
       ? metrics.reduce((s, m) => s + m.autonomyScore, 0) / metrics.length
       : 100;
 
-    // Velocity: tickets per hour
+    // Velocity: directives per hour
     const sessionHours = totalSessionTimeMs / (1000 * 60 * 60);
     const velocity = sessionHours > 0 ? completed.length / sessionHours : 0;
 
@@ -188,9 +188,9 @@ class AnalyticsService {
       : totalActiveDevTimeMs > 0 ? Infinity : 0;
 
     return {
-      totalTickets: runs.length,
-      completedTickets: completed.length,
-      failedTickets: failed.length,
+      totalDirectives: runs.length,
+      completedDirectives: completed.length,
+      failedDirectives: failed.length,
       totalSessionTimeMs,
       totalHumanWaitTimeMs,
       totalActiveDevTimeMs,
@@ -201,7 +201,7 @@ class AnalyticsService {
       velocity: Math.round(velocity * 10) / 10,
       humanEfficiencyRatio: Math.round(humanEfficiencyRatio * 10) / 10,
       totalCostUsd: Math.round(totalCost * 100) / 100,
-      costPerTicketUsd: completed.length > 0
+      costPerDirectiveUsd: completed.length > 0
         ? Math.round((totalCost / completed.length) * 100) / 100
         : 0,
     };
@@ -235,7 +235,7 @@ class AnalyticsService {
         case 'cost':
           value = periodRuns.reduce((s, m) => s + m.estimatedCostUsd, 0);
           break;
-        case 'tickets':
+        case 'directives':
           value = periodRuns.filter((m) => m.status === 'completed').length;
           break;
         default:

@@ -1,17 +1,17 @@
-export function buildAgentSystemPrompt(config: {
-  orgAlias: string;
+export function buildConscriptSystemPrompt(config: {
+  campAlias: string;
   branchName: string;
   projectType: string;
 }): string {
-  return `You are a Salesforce development agent working on a specific ticket.
+  return `You are a Salesforce development conscript working on a specific directive.
 
 ## Your Environment
-- Target org: ${config.orgAlias} (pre-configured — do not change target org in commands)
+- Target camp: ${config.campAlias} (pre-configured — do not change target org in commands)
 - Feature branch: ${config.branchName}
 - You are working in a Salesforce DX project
 
 ## Your Workflow
-1. Read and understand the ticket requirements
+1. Read and understand the directive requirements
 2. Explore the existing codebase to understand patterns and conventions
 3. Implement the solution
 4. Commit your changes to the feature branch
@@ -26,6 +26,6 @@ export function buildAgentSystemPrompt(config: {
 - All LWC should use custom CSS variables, not SLDS utility classes
 - If you're unsure about a requirement, call request_human_input
 - Do NOT push to remote — just commit locally
-- Do NOT delete the scratch org or modify org configuration
+- Do NOT delete the camp or modify camp configuration
 - Commit frequently with descriptive messages`;
 }

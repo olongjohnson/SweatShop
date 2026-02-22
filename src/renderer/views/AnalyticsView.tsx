@@ -78,7 +78,7 @@ function RecentRuns({ runs }: { runs: RunMetrics[] }) {
       <div className="chart-title">Recent Runs</div>
       <div className="runs-table">
         <div className="runs-header">
-          <span>Ticket</span>
+          <span>Directive</span>
           <span>Status</span>
           <span>Interventions</span>
           <span>Duration</span>
@@ -88,8 +88,8 @@ function RecentRuns({ runs }: { runs: RunMetrics[] }) {
           <div className="runs-empty">No runs recorded yet</div>
         )}
         {runs.slice(0, 10).map((run) => (
-          <div key={`${run.ticketId}-${run.startedAt}`} className="runs-row">
-            <span className="runs-ticket">{run.ticketId.slice(0, 8)}</span>
+          <div key={`${run.directiveId}-${run.startedAt}`} className="runs-row">
+            <span className="runs-ticket">{run.directiveId.slice(0, 8)}</span>
             <span className={`runs-status ${run.status}`}>
               {run.status === 'completed' ? '\u2713' : run.status === 'failed' ? '\u2717' : '\u25CB'}
             </span>
@@ -184,8 +184,8 @@ export default function AnalyticsView() {
             color="var(--accent)"
           />
           <MetricCard
-            label="Cost per Ticket"
-            value={`$${session.costPerTicketUsd.toFixed(2)}`}
+            label="Cost per Directive"
+            value={`$${session.costPerDirectiveUsd.toFixed(2)}`}
             color="var(--text-primary)"
           />
           <MetricCard
@@ -202,8 +202,8 @@ export default function AnalyticsView() {
 
         <div className="analytics-stats-row">
           <div className="stat-pill">
-            <span className="stat-pill-label">Tickets</span>
-            <span className="stat-pill-value">{session.completedTickets}/{session.totalTickets}</span>
+            <span className="stat-pill-label">Directives</span>
+            <span className="stat-pill-value">{session.completedDirectives}/{session.totalDirectives}</span>
           </div>
           <div className="stat-pill">
             <span className="stat-pill-label">Interventions</span>
