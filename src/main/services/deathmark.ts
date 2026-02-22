@@ -5,10 +5,14 @@ import type { Directive } from '../../shared/types';
 // jsforce v3 — use require for CJS compat
 const jsforce = require('jsforce');
 
-type JsforceConnection = {
+export type JsforceConnection = {
   identity(): Promise<unknown>;
   query<T>(soql: string): Promise<{ records: T[] }>;
-  sobject(name: string): { update(data: Record<string, unknown>): Promise<unknown> };
+  sobject(name: string): {
+    update(data: Record<string, unknown>): Promise<unknown>;
+    upsert(data: Record<string, unknown>, extIdField: string): Promise<{ id: string; success: boolean }>;
+    create(data: Record<string, unknown>): Promise<{ id: string; success: boolean }>;
+  };
 };
 
 let conn: JsforceConnection | null = null;
@@ -36,6 +40,11 @@ export async function connect(): Promise<void> {
   }
 
   conn = new jsforce.Connection(connOpts) as JsforceConnection;
+}
+
+export async function ensureConnection(): Promise<JsforceConnection> {
+  if (!conn) await connect();
+  return conn!;
 }
 
 export async function testConnection(): Promise<{ success: boolean; error?: string }> {

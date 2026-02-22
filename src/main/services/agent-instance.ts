@@ -12,7 +12,11 @@ import type {
 import type { ConscriptStatus, ChatMessage } from '../../shared/types';
 import { buildConscriptSystemPrompt } from '../prompts/agent-system';
 import * as dbService from './database';
+import * as writeback from './deathmark-writeback';
 import { analytics } from './analytics';
+import { generateQaChecklist } from './qa-checklist-generator';
+import { GitService } from './git-service';
+import { getSettings } from './settings';
 import { randomUUID } from 'crypto';
 
 // Debug file logger
@@ -90,6 +94,36 @@ export class ConscriptInstance extends EventEmitter {
   private emitChat(role: ChatMessage['role'], content: string): void {
     const msg = dbService.chatSend(this.id, content, role);
     this.emit('chat-message', msg);
+  }
+
+  /** Generate QA checklist and save to DB before transitioning to QA_READY */
+  private async generateQaChecklistBeforeQA(): Promise<void> {
+    try {
+      const conscript = dbService.getConscript(this.id);
+      if (!conscript?.assignedDirectiveId || !conscript.branchName) return;
+
+      const directive = dbService.getDirective(conscript.assignedDirectiveId);
+      if (!directive) return;
+
+      const settings = getSettings();
+      const projectDir = settings.git?.workingDirectory || process.cwd();
+      const gitService = new GitService(projectDir);
+
+      const [diffSummary, commitLog] = await Promise.all([
+        gitService.getFullDiff(conscript.branchName).catch(() => '(diff unavailable)'),
+        gitService.getCommitLog(conscript.branchName).then((commits) =>
+          commits.map((c) => `${c.shortHash} ${c.subject}`).join('\n')
+        ).catch(() => ''),
+      ]);
+
+      debugLog(`[ConscriptInstance ${this.id}] Generating QA checklist...`);
+      const items = await generateQaChecklist({ directive, diffSummary, commitLog });
+      dbService.updateQaChecklist(this.id, items);
+      debugLog(`[ConscriptInstance ${this.id}] QA checklist ready: ${items.length} items`);
+    } catch (err) {
+      debugLog(`[ConscriptInstance ${this.id}] QA checklist generation failed: ${err}`);
+      // Non-fatal — proceed to QA_READY without checklist
+    }
   }
 
   async start(config: {
@@ -206,11 +240,13 @@ export class ConscriptInstance extends EventEmitter {
       // If conscript finished without calling report_development_complete, auto-transition to QA_READY
       if (this._status === 'DEVELOPING' || this._status === 'REWORK') {
         debugLog(`[ConscriptInstance ${this.id}] Conscript completed without reporting — auto-transitioning to QA_READY`);
-        this.setStatus('QA_READY');
-        this.emitChat('system', 'Conscript finished working. Ready for review.');
         if (this.runId) {
           dbService.updateRun(this.runId, { status: 'completed', completedAt: new Date().toISOString() });
         }
+        // Generate QA checklist before transitioning so it's ready when UI loads
+        await this.generateQaChecklistBeforeQA();
+        this.setStatus('QA_READY');
+        this.emitChat('system', 'Conscript finished working. Ready for review.');
         this.emit('work-complete');
       }
     } catch (err: unknown) {
@@ -234,14 +270,20 @@ export class ConscriptInstance extends EventEmitter {
       const waitDurationMs = Date.now() - this.interventionStartTime;
       this.interventionStartTime = null;
 
+      const interventionEvent = {
+        timestamp: new Date().toISOString(),
+        type: 'question' as const,
+        conscriptMessage: '(see chat history)',
+        humanResponse: message,
+        waitDurationMs,
+      };
+
       try {
-        dbService.incrementIntervention(this.runId, {
-          timestamp: new Date().toISOString(),
-          type: 'question',
-          conscriptMessage: '(see chat history)',
-          humanResponse: message,
-          waitDurationMs,
-        });
+        dbService.incrementIntervention(this.runId, interventionEvent);
+        const run = dbService.getRun(this.runId);
+        if (run) {
+          writeback.onIntervention(this.runId, interventionEvent, run.humanInterventionCount - 1).catch(() => {});
+        }
       } catch {
         // Run might not exist in DB yet — that's ok
       }
@@ -304,11 +346,13 @@ export class ConscriptInstance extends EventEmitter {
           'Signal that development is complete and the code is ready for deployment and QA. Call this when all implementation and local commits are done.',
           { summary: z.string().describe('Brief summary of what was implemented') },
           async (args) => {
-            this.setStatus('QA_READY');
-            this.emitChat('system', `Development complete: ${args.summary}`);
             if (this.runId) {
               dbService.updateRun(this.runId, { status: 'completed', completedAt: new Date().toISOString() });
             }
+            // Generate QA checklist before transitioning so it's ready when UI loads
+            await this.generateQaChecklistBeforeQA();
+            this.setStatus('QA_READY');
+            this.emitChat('system', `Development complete: ${args.summary}`);
             this.emit('work-complete');
             return {
               content: [{ type: 'text' as const, text: `Development complete. Summary: ${args.summary}` }],

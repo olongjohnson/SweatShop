@@ -21,8 +21,8 @@ export default function App() {
     window.sweatshop.conscripts.onStatusChanged(async (data) => {
       if (data.status === 'QA_READY') {
         const conscript = await window.sweatshop.conscripts.get(data.conscriptId);
-        if (conscript?.assignedCampAlias) {
-          setInspectCampAlias(conscript.assignedCampAlias);
+        if (conscript?.assignedCampAliases?.length) {
+          setInspectCampAlias(conscript.assignedCampAliases[0]);
           setFocusConscriptId(data.conscriptId);
           setView('dashboard');
         }

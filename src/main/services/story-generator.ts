@@ -4,6 +4,19 @@ import type { SDKResultSuccess } from '@anthropic-ai/claude-agent-sdk';
 // eslint-disable-next-line @typescript-eslint/no-implied-eval
 const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
 
+// ===== Helpers =====
+
+/** Strip markdown code fences and extract JSON from LLM response */
+function extractJson(raw: string): string {
+  // Try to extract from ```json ... ``` or ``` ... ```
+  const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (fenceMatch) return fenceMatch[1].trim();
+  // Try to find raw JSON object
+  const objMatch = raw.match(/\{[\s\S]*\}/);
+  if (objMatch) return objMatch[0];
+  return raw.trim();
+}
+
 // ===== Shared Priming =====
 
 const SWEATSHOP_PRIMER = `SweatShop is an AI agent orchestration platform for Salesforce development.
@@ -74,7 +87,7 @@ export async function generateStoryDetails(input: StoryInput): Promise<StoryOutp
   }
 
   try {
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(extractJson(text));
     const validPriorities = ['low', 'medium', 'high', 'critical'];
     return {
       title: parsed.title || '',
@@ -167,7 +180,7 @@ export async function generateIdentityDetails(input: IdentityInput): Promise<Ide
   }
 
   try {
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(extractJson(text));
     const validModels = ['sonnet', 'opus', 'haiku'];
     const validEfforts = ['low', 'medium', 'high', 'max'];
     return {
@@ -272,7 +285,7 @@ export async function generateWorkflowDetails(input: WorkflowInput): Promise<Wor
   }
 
   try {
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(extractJson(text));
     const validTypes = ['refine', 'execute', 'review', 'human'];
     const validIds = new Set(input.availableIdentities.map((i) => i.id));
 

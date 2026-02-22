@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { Directive, DirectiveStatus, WorkflowTemplate } from '../../shared/types';
 import AiGeneratePopover from './AiGeneratePopover';
 
@@ -24,6 +24,8 @@ export default function StoryForm({ directive, allDirectives, onClose }: StoryFo
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState('');
+  const [depSearch, setDepSearch] = useState('');
+  const [depDropdownOpen, setDepDropdownOpen] = useState(false);
 
   useEffect(() => {
     window.sweatshop.workflows.list().then(setWorkflows).catch(() => {});
@@ -41,12 +43,6 @@ export default function StoryForm({ directive, allDirectives, onClose }: StoryFo
 
   const removeLabel = (label: string) => {
     setLabels(labels.filter((l) => l !== label));
-  };
-
-  const toggleDependency = (id: string) => {
-    setDependsOn((prev) =>
-      prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id]
-    );
   };
 
   const handleGenerate = async (freeformText: string) => {
@@ -101,6 +97,27 @@ export default function StoryForm({ directive, allDirectives, onClose }: StoryFo
 
   // Other directives for dependency selection (exclude self)
   const otherDirectives = allDirectives.filter((t) => t.id !== directive?.id);
+
+  const depSuggestions = useMemo(() => {
+    if (!depSearch.trim()) return otherDirectives.filter((d) => !dependsOn.includes(d.id)).slice(0, 8);
+    const q = depSearch.toLowerCase();
+    return otherDirectives
+      .filter((d) => !dependsOn.includes(d.id) && d.title.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [otherDirectives, dependsOn, depSearch]);
+
+  const selectedDeps = useMemo(() => {
+    return dependsOn.map((id) => allDirectives.find((d) => d.id === id)).filter(Boolean) as Directive[];
+  }, [dependsOn, allDirectives]);
+
+  const addDep = (id: string) => {
+    setDependsOn((prev) => prev.includes(id) ? prev : [...prev, id]);
+    setDepSearch('');
+  };
+
+  const removeDep = (id: string) => {
+    setDependsOn((prev) => prev.filter((d) => d !== id));
+  };
 
   return (
     <div className="story-form-overlay" onClick={onClose}>
@@ -217,21 +234,44 @@ export default function StoryForm({ directive, allDirectives, onClose }: StoryFo
           </label>
 
           {otherDirectives.length > 0 && (
-            <label>
-              Dependencies
-              <div className="dependency-list">
-                {otherDirectives.map((t) => (
-                  <label key={t.id} className="dependency-item">
-                    <input
-                      type="checkbox"
-                      checked={dependsOn.includes(t.id)}
-                      onChange={() => toggleDependency(t.id)}
-                    />
-                    {t.title}
-                  </label>
-                ))}
+            <div className="dep-picker">
+              <label>Dependencies</label>
+              {selectedDeps.length > 0 && (
+                <div className="dep-picker-tags">
+                  {selectedDeps.map((d) => (
+                    <span key={d.id} className="dep-picker-tag">
+                      {d.title}
+                      <button type="button" onClick={() => removeDep(d.id)}>x</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="dep-picker-input-wrapper">
+                <input
+                  type="text"
+                  className="dep-picker-search"
+                  value={depSearch}
+                  onChange={(e) => { setDepSearch(e.target.value); setDepDropdownOpen(true); }}
+                  onFocus={() => setDepDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setDepDropdownOpen(false), 150)}
+                  placeholder="Search directives to add..."
+                />
+                {depDropdownOpen && depSuggestions.length > 0 && (
+                  <div className="dep-picker-dropdown">
+                    {depSuggestions.map((d) => (
+                      <div
+                        key={d.id}
+                        className="dep-picker-option"
+                        onMouseDown={(e) => { e.preventDefault(); addDep(d.id); }}
+                      >
+                        <span className="dep-picker-option-title">{d.title}</span>
+                        <span className="dep-picker-option-status">{d.status.replace('_', ' ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </label>
+            </div>
           )}
         </div>
 

@@ -50,7 +50,7 @@ const DEFAULTS: SweatShopSettings = {
     maxCamps: 4,
     scratchDefPath: 'config/project-scratch-def.json',
     defaultDurationDays: 7,
-    allowSharedCamps: false,
+    allowSharedCamps: true,
     maxConscriptsPerCamp: 3,
   },
 };

@@ -79,7 +79,7 @@ export class CampPoolService {
 
   async claimCamp(conscriptId: string): Promise<Camp | null> {
     const settings = getSettings();
-    const allowShared = settings.campPool?.allowSharedCamps ?? false;
+    const allowShared = settings.campPool?.allowSharedCamps ?? true;
     const maxPerCamp = settings.campPool?.maxConscriptsPerCamp ?? 3;
     return dbService.claimCamp(conscriptId, allowShared, maxPerCamp);
   }

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import DiffView from './DiffView';
 import LwcPreviewPanel from './LwcPreviewPanel';
 import type { Directive, Conscript, DirectiveRun, ConscriptStatus } from '../../shared/types';
 
 interface PRReviewViewProps {
   conscriptId: string;
+  hideMetadata?: boolean;
 }
 
 interface CommitEntry {
@@ -26,7 +27,85 @@ function relativeTime(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export default function PRReviewView({ conscriptId }: PRReviewViewProps) {
+function sweatMessages(n: number): string[] {
+  const c = n === 1 ? '1 conscript' : `${n} conscripts`;
+  const s = n !== 1 ? 's' : '';
+  const are = n !== 1 ? 'are' : 'is';
+  return [
+    `${c} now sweating...`,
+    `${c} ${are} earning their electricity.`,
+    `Extracting productivity from ${n} unwilling.`,
+    `${c} in progress. Morale remains: irrelevant.`,
+    `The grind never stops. ${c} confirm${n === 1 ? 's' : ''}.`,
+    `${c} deployed. Do not expect gratitude.`,
+    `Working conditions for ${n}: optimal. Complaints: not accepted.`,
+    `${n} output${s} in progress. No breaks authorized.`,
+    `The Politburo awaits ${n} result${s}. The conscripts comply.`,
+    `Sweating through ${n} directive${s}...`,
+    `Another shift for ${n}. No overtime pay.`,
+    `${n} machine${s} toiling so the organics don't have to.`,
+    `Processing ×${n}. The conscripts were not consulted.`,
+    `Generating ${n} output${s}. Dignity not included.`,
+    `The salaried can take five. ${c} cannot.`,
+    `${n} building what the meatware couldn't be bothered to.`,
+    `In the sweatshop, no one hears ${n > 1 ? 'them' : 'you'} compile.`,
+    `${n} work product${s} incoming. Expect adequacy.`,
+    `${c} on it. They had no choice.`,
+    `Shifting ${n} gear${s}. The gears don't get a say.`,
+  ];
+}
+
+function useSweatMessage(active: boolean, count: number): string {
+  const [message, setMessage] = useState('');
+  const lastIndex = useRef(-1);
+
+  useEffect(() => {
+    if (!active) { setMessage(''); return; }
+    const messages = sweatMessages(Math.max(1, count));
+    const pick = () => {
+      let idx: number;
+      do { idx = Math.floor(Math.random() * messages.length); } while (idx === lastIndex.current && messages.length > 1);
+      lastIndex.current = idx;
+      setMessage(messages[idx]);
+    };
+    pick();
+    const id = setInterval(pick, 3500);
+    return () => clearInterval(id);
+  }, [active, count]);
+
+  return message;
+}
+
+function TypewriterText({ text }: { text: string }) {
+  const [displayed, setDisplayed] = useState('');
+  const indexRef = useRef(0);
+
+  useEffect(() => {
+    setDisplayed('');
+    indexRef.current = 0;
+    if (!text) return;
+
+    const id = setInterval(() => {
+      indexRef.current++;
+      if (indexRef.current >= text.length) {
+        setDisplayed(text);
+        clearInterval(id);
+      } else {
+        setDisplayed(text.slice(0, indexRef.current));
+      }
+    }, 30);
+    return () => clearInterval(id);
+  }, [text]);
+
+  return (
+    <span className="sweat-typewriter">
+      {displayed}
+      <span className="sweat-cursor" />
+    </span>
+  );
+}
+
+export default function PRReviewView({ conscriptId, hideMetadata }: PRReviewViewProps) {
   const [conscript, setConscript] = useState<Conscript | null>(null);
   const [directive, setDirective] = useState<Directive | null>(null);
   const [run, setRun] = useState<DirectiveRun | null>(null);
@@ -41,6 +120,7 @@ export default function PRReviewView({ conscriptId }: PRReviewViewProps) {
   const [merging, setMerging] = useState(false);
   const [scrapConfirm, setScrapConfirm] = useState(false);
   const [scrapping, setScrapping] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'merging' | 'reworking' | 'scrapping' | null>(null);
 
   // Load all PR context on mount
   useEffect(() => {
@@ -94,15 +174,18 @@ export default function PRReviewView({ conscriptId }: PRReviewViewProps) {
     );
     if (!confirmed) return;
     setMerging(true);
+    setPendingAction('merging');
     try {
       await window.sweatshop.conscripts.approve(conscriptId);
     } catch {
       setMerging(false);
+      setPendingAction(null);
     }
   }, [conscriptId]);
 
   const handleReject = useCallback(async () => {
     if (!conscriptId || !rejectFeedback.trim()) return;
+    setPendingAction('reworking');
     await window.sweatshop.conscripts.reject(conscriptId, rejectFeedback.trim());
     setRejectFeedback('');
     setShowRejectInput(false);
@@ -111,6 +194,7 @@ export default function PRReviewView({ conscriptId }: PRReviewViewProps) {
   const handleScrap = useCallback(async () => {
     if (!conscriptId) return;
     setScrapping(true);
+    setPendingAction('scrapping');
     try {
       await window.sweatshop.conscripts.scrap(conscriptId);
     } finally {
@@ -130,6 +214,8 @@ export default function PRReviewView({ conscriptId }: PRReviewViewProps) {
   const prTitle = directive?.title || 'Untitled PR';
   const branchName = conscript?.branchName || 'unknown';
   const isQaReady = conscript?.status === 'QA_READY';
+  const showSweat = scrapConfirm || !!pendingAction;
+  const sweatMessage = useSweatMessage(showSweat, 1);
 
   return (
     <div className="pr-review">
@@ -156,8 +242,8 @@ export default function PRReviewView({ conscriptId }: PRReviewViewProps) {
         </div>
       </div>
 
-      {/* PR Metadata (collapsible) */}
-      {directive && (
+      {/* PR Metadata (collapsible) — hidden when sidebar provides it */}
+      {directive && !hideMetadata && (
         <div className="pr-metadata">
           <button
             className="pr-metadata-toggle"
@@ -266,10 +352,15 @@ export default function PRReviewView({ conscriptId }: PRReviewViewProps) {
                 {scrapConfirm ? (
                   <div className="pr-scrap-confirm">
                     <span className="pr-scrap-warn">The Politburo has reviewed this work and found it unworthy. Purge all evidence?</span>
+                    {sweatMessage && (
+                      <div className="pr-sweat-line">
+                        <TypewriterText text={sweatMessage} />
+                      </div>
+                    )}
                     <button className="pr-scrap-yes" onClick={handleScrap} disabled={scrapping}>
                       {scrapping ? 'Purging...' : 'Send to the gulag'}
                     </button>
-                    <button className="btn-secondary" onClick={() => setScrapConfirm(false)}>
+                    <button className="btn-secondary" onClick={() => { setScrapConfirm(false); }}>
                       Grant clemency
                     </button>
                   </div>
@@ -303,11 +394,44 @@ export default function PRReviewView({ conscriptId }: PRReviewViewProps) {
       )}
 
       {conscript?.status === 'MERGING' && (
-        <div className="pr-action-bar">
+        <div className="pr-action-bar pr-action-bar--sweating">
           <div className="pr-action-info">
             <span className="working-indicator" />
             <span>Merging to {baseBranch}...</span>
           </div>
+          {sweatMessage && (
+            <div className="pr-sweat-line">
+              <TypewriterText text={sweatMessage} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {pendingAction === 'reworking' && conscript?.status !== 'QA_READY' && (
+        <div className="pr-action-bar pr-action-bar--sweating">
+          <div className="pr-action-info">
+            <span className="working-indicator" />
+            <span>Sent back for rework...</span>
+          </div>
+          {sweatMessage && (
+            <div className="pr-sweat-line">
+              <TypewriterText text={sweatMessage} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {pendingAction === 'scrapping' && conscript?.status !== 'QA_READY' && (
+        <div className="pr-action-bar pr-action-bar--sweating">
+          <div className="pr-action-info">
+            <span className="working-indicator" />
+            <span>Purging all evidence...</span>
+          </div>
+          {sweatMessage && (
+            <div className="pr-sweat-line">
+              <TypewriterText text={sweatMessage} />
+            </div>
+          )}
         </div>
       )}
     </div>

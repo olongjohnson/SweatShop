@@ -3,6 +3,8 @@ import type { Camp, Conscript, Directive, DirectiveRun } from '../../shared/type
 import CampBrowserEmbed from './CampBrowserEmbed';
 import PRReviewView from './PRReviewView';
 import DiffView from './DiffView';
+import QaChecklistSidebar from './QaChecklistSidebar';
+import TribunalChatPanel from './TribunalChatPanel';
 
 interface CampAuditViewProps {
   selectedCampAlias: string | null;
@@ -48,13 +50,18 @@ export default function CampAuditView({ selectedCampAlias, onCampSelected, focus
 
   // Subscribe to conscript status changes
   useEffect(() => {
-    window.sweatshop.conscripts.onStatusChanged(() => refresh());
-  }, [refresh]);
-
-  // Clear work item when camp changes
-  useEffect(() => {
-    setSelectedRunId('');
-  }, [selectedCampAlias]);
+    window.sweatshop.conscripts.onStatusChanged((data) => {
+      refresh();
+      // If a conscript goes IDLE (scrapped/reset), clear selection if it was showing their work
+      if (data.status === 'IDLE' && selectedRunId) {
+        const run = enrichedRuns.find((r) => r.id === selectedRunId);
+        if (run && run.conscriptId === data.conscriptId) {
+          setSelectedRunId('');
+          setActiveTab('browse');
+        }
+      }
+    });
+  }, [refresh, selectedRunId, enrichedRuns]);
 
   // Auto-focus tribunal for a specific conscript (QA_READY auto-nav)
   useEffect(() => {
@@ -65,18 +72,16 @@ export default function CampAuditView({ selectedCampAlias, onCampSelected, focus
     }
   }, [focusConscriptId, enrichedRuns]);
 
-  // Filter runs for selected camp and enrich with directive/conscript data
+  // Enrich ALL runs with directive/conscript data (tribunal is camp-independent)
   useEffect(() => {
-    if (!selectedCampAlias) {
+    if (allRuns.length === 0) {
       setEnrichedRuns([]);
       return;
     }
 
-    const campRuns = allRuns.filter((r) => r.campAlias === selectedCampAlias);
-
     (async () => {
       const enriched: EnrichedRun[] = await Promise.all(
-        campRuns.map(async (run) => {
+        allRuns.map(async (run) => {
           const [directive, conscript] = await Promise.all([
             window.sweatshop.directives.get(run.directiveId),
             window.sweatshop.conscripts.get(run.conscriptId),
@@ -86,7 +91,7 @@ export default function CampAuditView({ selectedCampAlias, onCampSelected, focus
       );
       setEnrichedRuns(enriched);
     })();
-  }, [selectedCampAlias, allRuns]);
+  }, [allRuns]);
 
   // Conscript map for camp picker display
   const conscriptMap = useMemo(() => {
@@ -96,8 +101,9 @@ export default function CampAuditView({ selectedCampAlias, onCampSelected, focus
   }, [conscripts]);
 
   // Runs eligible for tribunal (reviewable work items)
+  // Exclude IDLE conscripts — scrapped/reset work shouldn't appear
   const tribunalRuns = enrichedRuns.filter((r) => {
-    if (!r.conscript) return false;
+    if (!r.conscript || r.conscript.status === 'IDLE') return false;
     return ['QA_READY', 'APPROVED', 'MERGED'].includes(r.conscript.status)
       || r.status === 'completed'
       || r.status === 'failed';
@@ -123,7 +129,6 @@ export default function CampAuditView({ selectedCampAlias, onCampSelected, focus
   const handleCampChange = (alias: string) => {
     onCampSelected(alias || null);
     setSelectedRunId('');
-    setEnrichedRuns([]);
     setActiveTab('browse');
   };
 
@@ -184,32 +189,49 @@ export default function CampAuditView({ selectedCampAlias, onCampSelected, focus
   };
 
   const renderContent = () => {
-    if (!selectedCampAlias) {
+    // Tribunal works without camp selection
+    if (activeTab === 'tribunal' && selectedRun) {
       return (
-        <div className="camp-audit-empty">
-          <div className="camp-audit-empty-icon">&#9881;</div>
-          <h3>Camp Audit</h3>
-          <p>Select a camp to browse its Salesforce org, or pick a work item to review.</p>
-          <p className="camp-audit-empty-hint">
-            You can also click Inspect on a camp card in the Politburo board.
-          </p>
+        <div className="tribunal-layout">
+          <div className="tribunal-sidebar">
+            <QaChecklistSidebar
+              conscriptId={selectedRun.conscriptId}
+              directive={selectedRun.directive || null}
+            />
+          </div>
+          <div className="tribunal-main">
+            <div className="tribunal-diff-area">
+              {selectedRun.conscript?.status === 'QA_READY'
+                ? <PRReviewView conscriptId={selectedRun.conscriptId} hideMetadata />
+                : (
+                  <>
+                    {selectedRun.directive && renderStoryDetails(selectedRun)}
+                    <DiffView conscriptId={selectedRun.conscriptId} />
+                  </>
+                )}
+            </div>
+            <div className="tribunal-chat-area">
+              <TribunalChatPanel conscriptId={selectedRun.conscriptId} />
+            </div>
+          </div>
         </div>
       );
     }
 
-    if (activeTab === 'tribunal' && selectedRun) {
-      if (selectedRun.conscript?.status === 'QA_READY') {
-        return <PRReviewView conscriptId={selectedRun.conscriptId} />;
-      }
-      return (
-        <>
-          {selectedRun.directive && renderStoryDetails(selectedRun)}
-          <DiffView conscriptId={selectedRun.conscriptId} />
-        </>
-      );
+    if (selectedCampAlias) {
+      return <CampBrowserEmbed campAlias={selectedCampAlias} />;
     }
 
-    return <CampBrowserEmbed campAlias={selectedCampAlias} />;
+    return (
+      <div className="camp-audit-empty">
+        <div className="camp-audit-empty-icon">&#9881;</div>
+        <h3>Camp Audit</h3>
+        <p>Select a camp to browse its Salesforce org, or pick a work item to review.</p>
+        <p className="camp-audit-empty-hint">
+          You can also click Inspect on a camp card in the Politburo board.
+        </p>
+      </div>
+    );
   };
 
   if (loading) {
@@ -253,14 +275,12 @@ export default function CampAuditView({ selectedCampAlias, onCampSelected, focus
             className="camp-audit-selector"
             value={selectedRunId}
             onChange={(e) => handleWorkItemChange(e.target.value)}
-            disabled={!selectedCampAlias || tribunalRuns.length === 0}
+            disabled={tribunalRuns.length === 0}
           >
             <option value="">
-              {!selectedCampAlias
-                ? 'Select a camp first'
-                : tribunalRuns.length === 0
-                  ? 'No reviewable work items'
-                  : 'Select work item...'}
+              {tribunalRuns.length === 0
+                ? 'No reviewable work items'
+                : 'Select work item...'}
             </option>
             {tribunalRuns.map((run) => (
               <option key={run.id} value={run.id}>
@@ -272,11 +292,12 @@ export default function CampAuditView({ selectedCampAlias, onCampSelected, focus
       </div>
 
       {/* Tabs */}
-      {selectedCampAlias && (
+      {(selectedCampAlias || selectedRun) && (
         <div className="camp-audit-tabs">
           <button
             className={`camp-audit-tab ${activeTab === 'browse' ? 'active' : ''}`}
             onClick={() => setActiveTab('browse')}
+            disabled={!selectedCampAlias}
           >
             Browse
           </button>

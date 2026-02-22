@@ -47,7 +47,7 @@ export interface Conscript {
   name: string;
   status: ConscriptStatus;
   assignedDirectiveId?: string;
-  assignedCampAlias?: string;
+  assignedCampAliases: string[];
   branchName?: string;
   createdAt: string;
   updatedAt: string;
@@ -92,6 +92,12 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+export interface QaChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+}
+
 export interface DirectiveRun {
   id: string;
   directiveId: string;
@@ -106,6 +112,7 @@ export interface DirectiveRun {
   promptTokensUsed: number;
   completionTokensUsed: number;
   interventions: InterventionEvent[];
+  qaChecklist?: QaChecklistItem[];
 }
 
 export interface InterventionEvent {
@@ -308,6 +315,7 @@ export interface SweatShopAPI {
     reject: (conscriptId: string, feedback: string) => Promise<void>;
     stop: (conscriptId: string) => Promise<void>;
     scrap: (conscriptId: string) => Promise<void>;
+    retry: (conscriptId: string) => Promise<void>;
     delete: (conscriptId: string) => Promise<void>;
     onStatusChanged: (callback: (data: { conscriptId: string; status: ConscriptStatus }) => void) => void;
     onTerminalData: (callback: (data: { conscriptId: string; data: string }) => void) => void;
@@ -341,6 +349,8 @@ export interface SweatShopAPI {
     list: (directiveId?: string) => Promise<DirectiveRun[]>;
     get: (id: string) => Promise<DirectiveRun | null>;
     current: (conscriptId: string) => Promise<DirectiveRun | null>;
+    getQaChecklist: (conscriptId: string) => Promise<QaChecklistItem[]>;
+    updateQaChecklist: (conscriptId: string, checklist: QaChecklistItem[]) => Promise<void>;
   };
   stories: {
     generate: (input: { freeformInput: string }) => Promise<{

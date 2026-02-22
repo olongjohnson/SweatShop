@@ -6,8 +6,9 @@ import { GitService } from './git-service';
 import * as dbService from './database';
 import { getSettings } from './settings';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
-import { assertTransition, isInterruptState } from './agent-state-machine';
+import { assertTransition, isInterruptState, isActiveState } from './agent-state-machine';
 import { lwcPreview } from './lwc-preview';
+import * as writeback from './deathmark-writeback';
 import type { Conscript, ConscriptStatus } from '../../shared/types';
 
 const LOG_FILE = path.join(process.env.USERPROFILE || process.env.HOME || '.', 'sweatshop-conscript.log');
@@ -26,10 +27,27 @@ class ConscriptManager {
     this.broadcast(IPC_CHANNELS.CHAT_ON_MESSAGE, msg);
   }
 
+  /**
+   * On app startup, reset conscripts stuck in active states back to ERROR.
+   * Their backing agent processes are gone after restart.
+   */
+  recoverStuckConscripts(): void {
+    const conscripts = dbService.listConscripts();
+    const stuckStates: ConscriptStatus[] = ['ASSIGNED', 'BRANCHING', 'DEVELOPING', 'PROVISIONING', 'REWORK', 'MERGING'];
+    for (const c of conscripts) {
+      if (stuckStates.includes(c.status)) {
+        debugLog(`[ConscriptManager] Recovering stuck conscript ${c.id} (${c.name}) from ${c.status} → ERROR`);
+        dbService.updateConscript(c.id, { status: 'ERROR' });
+        this.chatSend(c.id, `App restarted while conscript was in ${c.status} state. Agent process lost — reset to ERROR. You can stop/scrap or re-assign.`);
+      }
+    }
+  }
+
   async createConscript(name: string): Promise<Conscript> {
     const conscript = dbService.createConscript({
       name,
       status: 'IDLE',
+      assignedCampAliases: [],
     });
     return conscript;
   }
@@ -87,10 +105,11 @@ class ConscriptManager {
     this.transitionConscript(conscriptId, 'ASSIGNED');
     dbService.updateConscript(conscriptId, {
       assignedDirectiveId: directiveId,
-      assignedCampAlias: config.campAlias,
+      assignedCampAliases: config.campAlias ? [config.campAlias] : [],
       branchName: config.branchName,
     });
     dbService.updateDirective(directiveId, { status: 'in_progress', assignedConscriptId: conscriptId });
+    writeback.onAssigned(directiveId).catch(() => {});
 
     // ASSIGNED → BRANCHING
     this.transitionConscript(conscriptId, 'BRANCHING');
@@ -144,6 +163,94 @@ class ConscriptManager {
       return;
     }
     await instance.handleHumanMessage(message);
+  }
+
+  async retryWork(conscriptId: string): Promise<void> {
+    const conscript = dbService.getConscript(conscriptId);
+    if (!conscript) throw new Error(`Conscript ${conscriptId} not found`);
+    if (conscript.status !== 'ERROR') throw new Error(`Cannot retry: conscript is ${conscript.status}, not ERROR`);
+    if (!conscript.assignedDirectiveId) throw new Error('Cannot retry: no directive assigned');
+
+    const directive = dbService.getDirective(conscript.assignedDirectiveId);
+    if (!directive) throw new Error('Cannot retry: directive not found');
+
+    // Kill stale instance if still in map
+    const oldInstance = this.conscripts.get(conscriptId);
+    if (oldInstance) {
+      oldInstance.stop();
+      this.conscripts.delete(conscriptId);
+    }
+
+    // Build prompt from directive + previous attempt context
+    const promptParts = [
+      `# ${directive.title}`,
+      '',
+      directive.description,
+      '',
+      directive.acceptanceCriteria ? `## Acceptance Criteria\n${directive.acceptanceCriteria}` : '',
+    ].filter(Boolean);
+
+    const chatHistory = dbService.chatHistory(conscriptId);
+    if (chatHistory.length > 0) {
+      const contextMessages = chatHistory
+        .filter((m) => m.role !== 'system' || m.content.includes('error') || m.content.includes('Error') || m.content.includes('Rework'))
+        .slice(-30)
+        .map((m) => `[${m.role}]: ${m.content}`)
+        .join('\n');
+      promptParts.push(
+        '',
+        '## Previous Attempt Context',
+        'This directive was attempted before but failed. Use this context to avoid the same issues:',
+        '',
+        contextMessages,
+      );
+    }
+
+    const settings = getSettings();
+    const projectDir = settings.git?.workingDirectory || '';
+    const branchName = conscript.branchName || `conscript/${directive.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+
+    // Resolve working directory — reuse existing worktree or project dir
+    let conscriptWorkDir = this.worktreePaths.get(conscriptId) || projectDir;
+
+    // If no worktree exists, try to create/reuse one
+    if (!this.worktreePaths.has(conscriptId) && projectDir) {
+      const gitService = new GitService(projectDir);
+      const { valid } = await gitService.validate();
+      if (valid) {
+        try {
+          conscriptWorkDir = await gitService.createWorktree(conscriptId, branchName);
+          this.worktreePaths.set(conscriptId, conscriptWorkDir);
+        } catch {
+          // Worktree may already exist from previous attempt — try to use it
+          const existingPath = `${projectDir}/.worktrees/${conscriptId}`;
+          const fs = await import('fs');
+          if (fs.existsSync(existingPath)) {
+            conscriptWorkDir = existingPath;
+            this.worktreePaths.set(conscriptId, conscriptWorkDir);
+          }
+        }
+      }
+    }
+
+    // ERROR → DEVELOPING
+    this.transitionConscript(conscriptId, 'DEVELOPING');
+    this.chatSend(conscriptId, 'Retrying with context from previous attempt...');
+
+    const instance = new ConscriptInstance(conscriptId, conscript.name);
+    this.conscripts.set(conscriptId, instance);
+    this.wireEvents(instance);
+
+    const campAliases = conscript.assignedCampAliases || [];
+    instance.start({
+      directiveId: conscript.assignedDirectiveId,
+      campAlias: campAliases[0] || '',
+      branchName,
+      prompt: promptParts.join('\n'),
+      workingDirectory: conscriptWorkDir,
+    }).catch((err: unknown) => {
+      debugLog(`[ConscriptManager] retryWork instance.start() rejected: ${err}`);
+    });
   }
 
   async approveWork(conscriptId: string): Promise<void> {
@@ -203,6 +310,9 @@ class ConscriptManager {
 
     if (conscript.assignedDirectiveId) {
       dbService.updateDirective(conscript.assignedDirectiveId, { status: 'merged' });
+      const runs = dbService.listRuns(conscript.assignedDirectiveId);
+      const lastRun = runs[runs.length - 1];
+      if (lastRun) writeback.onWorkApproved(conscript.assignedDirectiveId, lastRun.id).catch(() => {});
     }
 
     this.chatSend(conscriptId, 'Work complete! Branch merged.');
@@ -234,6 +344,8 @@ class ConscriptManager {
 
     if (conscript.assignedDirectiveId) {
       dbService.updateDirective(conscript.assignedDirectiveId, { status: 'in_progress' });
+      const run = dbService.currentRun(conscriptId);
+      if (run) writeback.onReworkRequested(conscript.assignedDirectiveId, run.id).catch(() => {});
     }
 
     const instance = this.conscripts.get(conscriptId);
@@ -273,6 +385,9 @@ class ConscriptManager {
 
       // Reset directive back to ready so it can be reassigned
       if (conscript.assignedDirectiveId) {
+        const runs = dbService.listRuns(conscript.assignedDirectiveId);
+        const lastRun = runs[runs.length - 1];
+        if (lastRun) writeback.onWorkReturned(conscript.assignedDirectiveId, lastRun.id, 'Returned to human by user. Conscript stopped before completion.').catch(() => {});
         dbService.updateDirective(conscript.assignedDirectiveId, { status: 'ready', assignedConscriptId: undefined });
       }
     }
@@ -317,6 +432,9 @@ class ConscriptManager {
 
     // Reset directive back to ready
     if (conscript.assignedDirectiveId) {
+      const runs = dbService.listRuns(conscript.assignedDirectiveId);
+      const lastRun = runs[runs.length - 1];
+      if (lastRun) writeback.onWorkFailed(conscript.assignedDirectiveId, lastRun.id, 'Work scrapped by user. Branch deleted and changes discarded.').catch(() => {});
       dbService.updateDirective(conscript.assignedDirectiveId, { status: 'ready', assignedConscriptId: undefined });
     }
 
@@ -359,17 +477,35 @@ class ConscriptManager {
       this.broadcastStatus(instance.id, status);
 
       // Auto-commit uncommitted work when conscript reaches QA_READY
+      // (QA checklist is generated in agent-instance before QA_READY transition)
       if (status === 'QA_READY') {
         this.autoCommitWorktree(instance.id).catch((err) => {
           debugLog(`[ConscriptManager] autoCommit failed for ${instance.id}: ${err}`);
         });
       }
 
+      // Deathmark write-back hooks
+      const conscript = dbService.getConscript(instance.id);
+      if (conscript?.assignedDirectiveId) {
+        const run = dbService.currentRun(instance.id);
+        if (run) {
+          if (status === 'DEVELOPING') writeback.onDevelopmentStarted(conscript.assignedDirectiveId, run.id).catch(() => {});
+          if (status === 'QA_READY') writeback.onQAReady(conscript.assignedDirectiveId, run.id).catch(() => {});
+          if (status === 'ERROR') {
+            // Pull recent chat for error context
+            const chat = dbService.chatHistory(instance.id);
+            const lastSystemMsg = [...chat].reverse().find((m) => m.role === 'system' && m.content.toLowerCase().includes('error'));
+            const reason = lastSystemMsg?.content || 'Agent encountered an unrecoverable error.';
+            writeback.onWorkFailed(conscript.assignedDirectiveId, run.id, reason).catch(() => {});
+          }
+        }
+      }
+
       if (isInterruptState(status)) {
-        const conscript = dbService.getConscript(instance.id);
+        const conscriptRec = conscript || dbService.getConscript(instance.id);
         this.broadcast(IPC_CHANNELS.CONSCRIPT_NOTIFICATION, {
           conscriptId: instance.id,
-          conscriptName: conscript?.name || instance.name,
+          conscriptName: conscriptRec?.name || instance.name,
           status,
         });
       }

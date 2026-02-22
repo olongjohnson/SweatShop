@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import type { Conscript, Directive, Camp, ConscriptStatus } from '../../shared/types';
 import type { DragState, DropHandlers } from '../hooks/useBoardDragDrop';
+import BoardChatPanel from './BoardChatPanel';
 
 const STATUS_LABELS: Record<ConscriptStatus, { label: string; color: string }> = {
   IDLE: { label: 'Idle', color: 'var(--text-muted)' },
@@ -42,6 +43,7 @@ export default function BoardConscriptColumn({ conscripts, directives, camps, on
   const [busyConscripts, setBusyConscripts] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dropHoverId, setDropHoverId] = useState<string | null>(null);
+  const [expandedChat, setExpandedChat] = useState<string | null>(null);
   const [allowSharedCamps, setAllowSharedCamps] = useState(false);
   const [maxConscriptsPerCamp, setMaxConscriptsPerCamp] = useState(3);
 
@@ -318,6 +320,15 @@ export default function BoardConscriptColumn({ conscripts, directives, camps, on
 
               {/* Actions */}
               <div className="board-agent-actions">
+                {!isIdle && (
+                  <button
+                    className={`board-btn-sm board-btn-chat ${expandedChat === conscript.id ? 'active' : ''}`}
+                    onClick={() => setExpandedChat(expandedChat === conscript.id ? null : conscript.id)}
+                    title="Chat"
+                  >
+                    Chat
+                  </button>
+                )}
                 {conscript.status === 'QA_READY' && (
                   <span className="board-agent-hint">Review in dashboard</span>
                 )}
@@ -325,9 +336,20 @@ export default function BoardConscriptColumn({ conscripts, directives, camps, on
                   <>
                     <button
                       className="btn-secondary board-btn-sm"
-                      onClick={() => window.sweatshop.chat.send(conscript.id, 'Please retry the last action.')}
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusyConscripts((prev) => new Set(prev).add(conscript.id));
+                        try {
+                          await window.sweatshop.conscripts.retry(conscript.id);
+                          onRefresh();
+                        } catch (err: any) {
+                          setErrors((prev) => ({ ...prev, [conscript.id]: err.message || 'Retry failed' }));
+                        } finally {
+                          setBusyConscripts((prev) => { const next = new Set(prev); next.delete(conscript.id); return next; });
+                        }
+                      }}
                     >
-                      Retry
+                      {busy ? '...' : 'Retry'}
                     </button>
                     <button className="board-btn-danger board-btn-sm" onClick={() => handleStop(conscript.id)}>
                       Stop
@@ -345,6 +367,10 @@ export default function BoardConscriptColumn({ conscripts, directives, camps, on
                   </button>
                 )}
               </div>
+
+              {expandedChat === conscript.id && (
+                <BoardChatPanel conscriptId={conscript.id} />
+              )}
 
               {error && <div className="board-agent-error">{error}</div>}
             </div>

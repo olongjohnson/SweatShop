@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import type {
   Directive, DirectiveStatus, Conscript, Camp, ChatMessage,
-  DirectiveRun, InterventionEvent, RefinedPrompt,
+  DirectiveRun, InterventionEvent, RefinedPrompt, QaChecklistItem,
   IdentityTemplate, WorkflowTemplate, PipelineRun,
 } from '../../shared/types';
 
@@ -168,6 +168,10 @@ function createTables(): void {
   try { db.prepare('SELECT workflow_template_id FROM directives LIMIT 1').get(); }
   catch { db.exec('ALTER TABLE directives ADD COLUMN workflow_template_id TEXT'); }
 
+  // Migration: add qa_checklist to directive_runs
+  try { db.prepare('SELECT qa_checklist FROM directive_runs LIMIT 1').get(); }
+  catch { db.exec('ALTER TABLE directive_runs ADD COLUMN qa_checklist TEXT'); }
+
   // Migration: rename old tables → new tables (agents→conscripts, tickets→directives, etc.)
   migrateOldTables();
 }
@@ -289,12 +293,24 @@ function rowToDirective(row: Record<string, unknown>): Directive {
 }
 
 function rowToConscript(row: Record<string, unknown>): Conscript {
+  let assignedCampAliases: string[] = [];
+  try {
+    const raw = row.assigned_camp_alias as string | null;
+    if (raw) {
+      // Support both legacy single-string and new JSON array format
+      if (raw.startsWith('[')) {
+        assignedCampAliases = JSON.parse(raw);
+      } else {
+        assignedCampAliases = [raw];
+      }
+    }
+  } catch { /* default empty */ }
   return {
     id: row.id as string,
     name: row.name as string,
     status: row.status as Conscript['status'],
     assignedDirectiveId: row.assigned_directive_id as string | undefined,
-    assignedCampAlias: row.assigned_camp_alias as string | undefined,
+    assignedCampAliases,
     branchName: row.branch_name as string | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -349,6 +365,7 @@ function rowToRun(row: Record<string, unknown>): DirectiveRun {
     promptTokensUsed: row.prompt_tokens_used as number,
     completionTokensUsed: row.completion_tokens_used as number,
     interventions: JSON.parse(row.interventions as string),
+    qaChecklist: row.qa_checklist ? JSON.parse(row.qa_checklist as string) : undefined,
   };
 }
 
@@ -426,7 +443,7 @@ export function createConscript(data: Omit<Conscript, 'id' | 'createdAt' | 'upda
     INSERT INTO conscripts (id, name, status, assigned_directive_id, assigned_camp_alias, branch_name, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, data.name, data.status, data.assignedDirectiveId ?? null,
-    data.assignedCampAlias ?? null, data.branchName ?? null, ts, ts);
+    JSON.stringify(data.assignedCampAliases ?? []), data.branchName ?? null, ts, ts);
   return getConscript(id)!;
 }
 
@@ -445,7 +462,7 @@ export function updateConscript(id: string, data: Partial<Conscript>): Conscript
       assigned_camp_alias = ?, branch_name = ?, updated_at = ?
     WHERE id = ?
   `).run(merged.name, merged.status, merged.assignedDirectiveId ?? null,
-    merged.assignedCampAlias ?? null, merged.branchName ?? null, merged.updatedAt, id);
+    JSON.stringify(merged.assignedCampAliases ?? []), merged.branchName ?? null, merged.updatedAt, id);
   return getConscript(id)!;
 }
 
@@ -456,7 +473,7 @@ export function listCamps(): Camp[] {
   return rows.map((r) => rowToCamp(r as Record<string, unknown>));
 }
 
-export function claimCamp(conscriptId: string, allowShared = false, maxPerCamp = 3): Camp | null {
+export function claimCamp(conscriptId: string, allowShared = true, maxPerCamp = 3): Camp | null {
   if (allowShared) {
     // Prefer co-locating: find a leased camp with capacity first
     const allCamps = listCamps();
@@ -673,6 +690,31 @@ export function incrementIntervention(runId: string, event: InterventionEvent): 
       interventions = ?, updated_at = ?
     WHERE id = ?
   `).run(JSON.stringify(interventions), now(), runId);
+}
+
+// ===== QA Checklist =====
+
+export function getQaChecklist(conscriptId: string): QaChecklistItem[] {
+  const run = currentRun(conscriptId);
+  if (!run) {
+    // Fall back to most recent completed run
+    const row = db.prepare(
+      'SELECT * FROM directive_runs WHERE conscript_id = ? ORDER BY started_at DESC LIMIT 1'
+    ).get(conscriptId);
+    if (!row) return [];
+    const r = rowToRun(row as Record<string, unknown>);
+    return r.qaChecklist || [];
+  }
+  return run.qaChecklist || [];
+}
+
+export function updateQaChecklist(conscriptId: string, checklist: QaChecklistItem[]): void {
+  // Find the most recent run for this conscript
+  const row = db.prepare(
+    'SELECT id FROM directive_runs WHERE conscript_id = ? ORDER BY started_at DESC LIMIT 1'
+  ).get(conscriptId) as { id: string } | undefined;
+  if (!row) return;
+  db.prepare('UPDATE directive_runs SET qa_checklist = ? WHERE id = ?').run(JSON.stringify(checklist), row.id);
 }
 
 // ===== Refined Prompts =====

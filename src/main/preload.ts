@@ -30,6 +30,7 @@ const api: SweatShopAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.CONSCRIPT_REJECT, conscriptId, feedback),
     stop: (conscriptId) => ipcRenderer.invoke(IPC_CHANNELS.CONSCRIPT_STOP, conscriptId),
     scrap: (conscriptId) => ipcRenderer.invoke(IPC_CHANNELS.CONSCRIPT_SCRAP, conscriptId),
+    retry: (conscriptId) => ipcRenderer.invoke(IPC_CHANNELS.CONSCRIPT_RETRY, conscriptId),
     delete: (conscriptId) => ipcRenderer.invoke(IPC_CHANNELS.CONSCRIPT_DELETE, conscriptId),
     onStatusChanged: (callback) => {
       ipcRenderer.on(IPC_CHANNELS.CONSCRIPT_STATUS_CHANGED, (_, data) => callback(data));
@@ -76,6 +77,8 @@ const api: SweatShopAPI = {
     list: (directiveId?) => ipcRenderer.invoke(IPC_CHANNELS.RUN_LIST, directiveId),
     get: (id) => ipcRenderer.invoke(IPC_CHANNELS.RUN_GET, id),
     current: (conscriptId) => ipcRenderer.invoke(IPC_CHANNELS.RUN_CURRENT, conscriptId),
+    getQaChecklist: (conscriptId) => ipcRenderer.invoke(IPC_CHANNELS.QA_CHECKLIST_GET, conscriptId),
+    updateQaChecklist: (conscriptId, checklist) => ipcRenderer.invoke(IPC_CHANNELS.QA_CHECKLIST_UPDATE, conscriptId, checklist),
   },
 
   stories: {

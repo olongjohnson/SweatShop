@@ -67,7 +67,7 @@ export default function BoardConnectionLines({
       }
 
       // Conscript → Camp line
-      if (conscript.assignedCampAlias) {
+      if (conscript.assignedCampAliases?.length) {
         const camp = camps.find((o) => o.assignedConscriptIds.includes(conscript.id));
         if (camp) {
           const cRect = getCardRect(container, 'conscript', conscript.id);

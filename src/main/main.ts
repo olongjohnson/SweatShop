@@ -6,6 +6,7 @@ import { initSettings } from './services/settings';
 import { registerIpcHandlers } from './ipc-handlers';
 import { browserManager } from './services/browser-manager';
 import { lwcPreview } from './services/lwc-preview';
+import { conscriptManager } from './services/agent-manager';
 
 // Allow SDK to spawn claude CLI (blocks nested sessions if CLAUDECODE is set)
 delete process.env.CLAUDECODE;
@@ -59,6 +60,9 @@ app.whenReady().then(() => {
 
   // Register IPC handlers before creating windows
   registerIpcHandlers();
+
+  // Recover conscripts stuck in active states from previous session
+  conscriptManager.recoverStuckConscripts();
 
   const win = createWindow();
   browserManager.setMainWindow(win);

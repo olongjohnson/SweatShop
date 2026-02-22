@@ -107,6 +107,10 @@ export function registerIpcHandlers(): void {
     return conscriptManager.scrapWork(conscriptId);
   });
 
+  ipcMain.handle(IPC_CHANNELS.CONSCRIPT_RETRY, async (_, conscriptId: string) => {
+    return conscriptManager.retryWork(conscriptId);
+  });
+
   ipcMain.handle(IPC_CHANNELS.CONSCRIPT_DELETE, async (_, conscriptId: string) => {
     await conscriptManager.stopConscript(conscriptId);
     dbService.deleteConscript(conscriptId);
@@ -119,7 +123,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.CAMP_CLAIM, (_, conscriptId: string) => {
     const settings = getSettings();
-    const allowShared = settings.campPool?.allowSharedCamps ?? false;
+    const allowShared = settings.campPool?.allowSharedCamps ?? true;
     const maxPerCamp = settings.campPool?.maxConscriptsPerCamp ?? 3;
     return dbService.claimCamp(conscriptId, allowShared, maxPerCamp);
   });
@@ -176,7 +180,7 @@ export function registerIpcHandlers(): void {
     const camp = dbService.getCampById(campId);
     if (!camp) throw new Error('Camp not found');
     const settings = getSettings();
-    const allowShared = settings.campPool?.allowSharedCamps ?? false;
+    const allowShared = settings.campPool?.allowSharedCamps ?? true;
     const maxPerCamp = settings.campPool?.maxConscriptsPerCamp ?? 3;
 
     if (allowShared) {
@@ -193,14 +197,25 @@ export function registerIpcHandlers(): void {
       ? camp.assignedConscriptIds
       : [...camp.assignedConscriptIds, conscriptId];
     dbService.updateCamp(campId, { status: 'leased', assignedConscriptIds: newIds });
-    dbService.updateConscript(conscriptId, { assignedCampAlias: camp.alias });
+    // Add camp alias to conscript's array
+    const conscript = dbService.getConscript(conscriptId);
+    if (conscript) {
+      const aliases = conscript.assignedCampAliases.includes(camp.alias)
+        ? conscript.assignedCampAliases
+        : [...conscript.assignedCampAliases, camp.alias];
+      dbService.updateConscript(conscriptId, { assignedCampAliases: aliases });
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.CAMP_UNASSIGN, async (_, campId: string, conscriptId: string) => {
     const camp = dbService.getCampById(campId);
     if (!camp) throw new Error('Camp not found');
     if (conscriptId) {
-      dbService.updateConscript(conscriptId, { assignedCampAlias: undefined });
+      const conscript = dbService.getConscript(conscriptId);
+      if (conscript) {
+        const aliases = conscript.assignedCampAliases.filter((a) => a !== camp.alias);
+        dbService.updateConscript(conscriptId, { assignedCampAliases: aliases });
+      }
     }
     dbService.releaseCamp(campId, conscriptId);
   });
@@ -226,6 +241,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.RUN_CURRENT, (_, conscriptId: string) => {
     return dbService.currentRun(conscriptId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.QA_CHECKLIST_GET, (_, conscriptId: string) => {
+    return dbService.getQaChecklist(conscriptId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.QA_CHECKLIST_UPDATE, (_, conscriptId: string, checklist: any) => {
+    return dbService.updateQaChecklist(conscriptId, checklist);
   });
 
   // Story generation
@@ -399,7 +422,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.LWC_PREVIEW_START, async (_, conscriptId: string, componentName: string) => {
     const conscript = dbService.getConscript(conscriptId);
     if (!conscript) throw new Error('Conscript not found');
-    return lwcPreview.start(conscriptId, componentName, conscript.assignedCampAlias || undefined);
+    return lwcPreview.start(conscriptId, componentName, conscript.assignedCampAliases[0] || undefined);
   });
 
   ipcMain.handle(IPC_CHANNELS.LWC_PREVIEW_STOP, async (_, conscriptId: string) => {

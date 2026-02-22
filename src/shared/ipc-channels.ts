@@ -16,6 +16,7 @@ export const IPC_CHANNELS = {
   CONSCRIPT_REJECT: 'conscript:reject',
   CONSCRIPT_STOP: 'conscript:stop',
   CONSCRIPT_SCRAP: 'conscript:scrap',
+  CONSCRIPT_RETRY: 'conscript:retry',
   CONSCRIPT_DELETE: 'conscript:delete',
 
   // Camps
@@ -46,6 +47,8 @@ export const IPC_CHANNELS = {
   RUN_LIST: 'run:list',
   RUN_GET: 'run:get',
   RUN_CURRENT: 'run:current',
+  QA_CHECKLIST_GET: 'qa-checklist:get',
+  QA_CHECKLIST_UPDATE: 'qa-checklist:update',
 
   // Story generation
   STORY_GENERATE: 'story:generate',
